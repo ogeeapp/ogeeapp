@@ -3,5 +3,4 @@ out/
 cache/
 broadcast/*/run-latest.json
 .env*
-app/deployments/fork.json
 *.log
