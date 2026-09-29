@@ -56,7 +56,7 @@ contract MarketHoursTest is Test {
         assertFalse(openNow);
         assertEq(open, 0);
         assertEq(close, 0);
-        assertEq(nextOpen, block.timestamp + 100);
+        assertEq(nextOpen, calendar[1].open);
     }
 
     function testOnlyKeeperCanReplaceSessions() public {
