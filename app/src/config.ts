@@ -47,6 +47,12 @@ export type RuntimeConfig = Omit<ParsedConfig, "ALCHEMY_API_KEYS" | "CORS_ORIGIN
   readonly CORS_ORIGINS: readonly string[];
 };
 
+// The local fork mines empty blocks every 3s and transactions immediately.
+// Two local blocks give ~6s confirmation latency; real RHC retains 20 blocks.
+export function confirmationBlocks(config: Pick<RuntimeConfig, "NETWORK">): number {
+  return config.NETWORK === "fork" ? 2 : 20;
+}
+
 export class ConfigurationError extends Error {
   constructor(message: string) {
     super(message);

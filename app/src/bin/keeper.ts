@@ -15,8 +15,10 @@ logger.info(
   "Keeper placeholder started; transaction jobs are implemented in C10",
 );
 
+const keepAlive = setInterval(() => {}, 60_000);
 await new Promise<void>((resolve) => {
   process.once("SIGINT", resolve);
   process.once("SIGTERM", resolve);
 });
+clearInterval(keepAlive);
 logger.info("Keeper stopped");
