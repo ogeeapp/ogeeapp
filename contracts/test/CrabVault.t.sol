@@ -1,0 +1,229 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.28;
+
+import {Test} from "forge-std/Test.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {CrabVault} from "../src/CrabVault.sol";
+import {UniswapV3HedgeAdapter} from "../src/UniswapV3HedgeAdapter.sol";
+import {ICrabVault} from "../src/interfaces/ICrabVault.sol";
+import {IPowerEngine} from "../src/interfaces/IPowerEngine.sol";
+import {ISwapRouter02} from "../src/interfaces/ISwapRouter02.sol";
+import {Regime} from "../src/libs/OgeeTypes.sol";
+import {MockStockToken} from "./mocks/MockStockToken.sol";
+import {MockSwapRouter} from "./mocks/MockSwapRouter.sol";
+import {MockUSDG} from "./mocks/MockUSDG.sol";
+import {MockReserveShiftAdapter} from "./mocks/MockReserveShiftAdapter.sol";
+import {MockVaultEngine} from "./mocks/MockVaultEngine.sol";
+
+contract CrabVaultTest is Test {
+    uint24 private constant POOL_FEE = 500;
+    uint256 private constant USDG = 1e6;
+
+    address private alice = makeAddr("alice");
+    address private bob = makeAddr("bob");
+
+    MockUSDG private usdg;
+    MockStockToken private stock;
+    MockSwapRouter private router;
+    MockVaultEngine private engine;
+    UniswapV3HedgeAdapter private adapter;
+    CrabVault private vault;
+
+    function setUp() public {
+        usdg = new MockUSDG();
+        stock = new MockStockToken();
+        router = new MockSwapRouter();
+        engine = new MockVaultEngine(IERC20(address(usdg)));
+        engine.addMarket(stock, 1e18);
+        adapter = new UniswapV3HedgeAdapter(ISwapRouter02(address(router)));
+
+        CrabVault implementation = new CrabVault();
+        bytes memory initData =
+            abi.encodeCall(CrabVault.initialize, (address(this), IERC20(address(usdg)), IPowerEngine(address(engine))));
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
+        vault = CrabVault(address(proxy));
+
+        vault.setParams(1 days, 1_000, 10_000, 1_000, 100, uint128(2 * USDG), uint128(1_000 * USDG));
+        vault.setHedgeRoute(0, adapter, POOL_FEE);
+        vault.setDepositor(alice, true);
+        vault.setDepositor(bob, true);
+
+        router.setRate(address(usdg), address(stock), POOL_FEE, 11e29);
+        router.setRate(address(stock), address(usdg), POOL_FEE, 1e6);
+        usdg.mint(address(router), 10_000 * USDG);
+        stock.mint(address(router), 10_000e18);
+    }
+
+    function testBootstrapDepositUsesTwelveDecimalsAndMaxMintRoundsDown() public {
+        assertEq(vault.decimals(), 12);
+        assertEq(vault.totalAssets(), 0);
+        assertEq(vault.navPerShareWad(), 1e18);
+        assertEq(vault.maxDeposit(alice), 1_000 * USDG);
+        assertLe(vault.previewMint(vault.maxMint(alice)), vault.maxDeposit(alice));
+
+        _deposit(alice, USDG);
+        assertEq(vault.balanceOf(alice), 1e12);
+        assertEq(vault.totalAssets(), USDG);
+        assertEq(vault.unlockTime(alice), block.timestamp + 1 days);
+    }
+
+    function testInflationDonationDoesNotLetFirstDepositorCaptureVictimDeposit() public {
+        _deposit(alice, 1);
+        usdg.mint(address(vault), 100 * USDG);
+        _deposit(bob, USDG);
+
+        assertLt(vault.convertToAssets(vault.balanceOf(alice)), 51 * USDG);
+    }
+
+    function testSelfReceiverRulePreventsThirdPartyDepositFromResettingLock() public {
+        _deposit(alice, 10 * USDG);
+        uint256 originalUnlock = vault.unlockTime(alice);
+
+        usdg.mint(bob, USDG);
+        vm.startPrank(bob);
+        usdg.approve(address(vault), USDG);
+        vm.expectRevert(ICrabVault.InvalidParams.selector);
+        vault.deposit(USDG, alice);
+        vm.stopPrank();
+
+        assertEq(vault.unlockTime(alice), originalUnlock);
+    }
+
+    function testTransferPropagatesOutstandingLockAndBlocksRedeem() public {
+        _deposit(alice, 10 * USDG);
+        uint256 senderUnlock = vault.unlockTime(alice);
+        uint256 amount = vault.balanceOf(alice) / 2;
+
+        vm.prank(alice);
+        vault.transfer(bob, 0);
+        assertEq(vault.unlockTime(bob), 0);
+
+        vm.prank(alice);
+        vault.transfer(bob, amount);
+
+        assertEq(vault.unlockTime(bob), senderUnlock);
+        assertEq(vault.maxWithdraw(bob), 0);
+        assertEq(vault.maxRedeem(bob), 0);
+
+        vm.prank(bob);
+        vm.expectRevert();
+        vault.redeem(amount, bob, bob);
+    }
+
+    function testWithdrawAndRedeemStayInsideLiabilityReserve() public {
+        _deposit(alice, 100 * USDG);
+        engine.setMarket(0, Regime.OPEN, 1e18, true, 1e18, 10e18, 0);
+        vm.warp(vault.unlockTime(alice));
+
+        uint256 maximumAssets = vault.maxWithdraw(alice);
+        uint256 maximumShares = vault.maxRedeem(alice);
+        assertEq(maximumAssets, 70 * USDG);
+        assertLe(vault.previewRedeem(maximumShares), maximumAssets);
+        assertLe(vault.previewMint(vault.maxMint(alice)), vault.maxDeposit(alice));
+
+        vm.prank(alice);
+        vault.withdraw(maximumAssets, alice, alice);
+        assertGe(vault.navView(), int256(20e18));
+    }
+
+    function testWithdrawalRechecksReserveAfterCashRaiseChangesLiability() public {
+        _deposit(alice, 100 * USDG);
+        stock.mint(address(vault), 20e18);
+        vault.syncHedgeUnits(0);
+        MockReserveShiftAdapter shiftingAdapter = new MockReserveShiftAdapter(engine);
+        vault.setHedgeRoute(0, shiftingAdapter, POOL_FEE);
+        vm.warp(vault.unlockTime(alice));
+
+        uint256 conservativeMaximum = vault.maxWithdraw(alice);
+        assertEq(conservativeMaximum, 119_800_000);
+        assertLe(vault.previewRedeem(vault.maxRedeem(alice)), conservativeMaximum);
+
+        vm.prank(alice);
+        vm.expectRevert(ICrabVault.InsufficientLiquidity.selector);
+        vault.withdraw(conservativeMaximum, alice, alice);
+
+        assertEq(engine.totalLiability(), 0);
+        assertEq(vault.totalAssets(), 120 * USDG);
+    }
+
+    function testNavUsesLastGoodPriceWhilePausedEvenWhenSpotRoundIsValid() public {
+        usdg.mint(address(vault), 100 * USDG);
+        stock.mint(address(vault), 2e18);
+        vault.syncHedgeUnits(0);
+        engine.setMarket(0, Regime.PAUSED, 100e18, true, 10e18, 0, 0);
+
+        assertEq(vault.navView(), int256(120e18));
+
+        engine.setMarket(0, Regime.OPEN, 100e18, true, 10e18, 0, 0);
+        assertEq(vault.navView(), int256(300e18));
+        engine.setMarket(0, Regime.OPEN, 100e18, false, 10e18, 0, 0);
+        assertEq(vault.navView(), int256(120e18));
+    }
+
+    function testRebalanceTracksActualStockDeltaAndResetsApprovals() public {
+        _deposit(alice, 100 * USDG);
+        engine.setMarket(0, Regime.OPEN, 1e18, true, 1e18, 0, 10e18);
+
+        int256 bought = vault.rebalance(0);
+        assertEq(bought, int256(11e18));
+        assertEq(vault.hedgeUnits(0), 11e18);
+        assertEq(stock.balanceOf(address(vault)), 11e18);
+        assertEq(usdg.allowance(address(vault), address(adapter)), 0);
+        assertEq(stock.allowance(address(adapter), address(router)), 0);
+
+        engine.setMarket(0, Regime.OPEN, 1e18, true, 1e18, 0, 8e18);
+        int256 sold = vault.rebalance(0);
+        assertEq(sold, -int256(3e18));
+        assertEq(vault.hedgeUnits(0), 8e18);
+        assertEq(stock.balanceOf(address(vault)), 8e18);
+        assertEq(usdg.allowance(address(vault), address(adapter)), 0);
+        assertEq(stock.allowance(address(adapter), address(router)), 0);
+    }
+
+    function testRebalanceRejectsPausedRegime() public {
+        engine.setMarket(0, Regime.PAUSED, 1e18, true, 1e18, 0, 10e18);
+
+        vm.expectRevert(ICrabVault.RegimePaused.selector);
+        vault.rebalance(0);
+    }
+
+    function testPayRaisesCashFromHedgeAndRevertsWhenHedgeCannotCoverPayment() public {
+        stock.mint(address(vault), 10e18);
+        vault.syncHedgeUnits(0);
+        address recipient = makeAddr("recipient");
+
+        vm.prank(address(engine));
+        vault.pay(recipient, 5 * USDG, 0);
+
+        assertEq(usdg.balanceOf(recipient), 5 * USDG);
+        assertGt(usdg.balanceOf(address(vault)), 0);
+        assertEq(vault.hedgeUnits(0), stock.balanceOf(address(vault)));
+        assertEq(usdg.allowance(address(vault), address(adapter)), 0);
+        assertEq(stock.allowance(address(vault), address(adapter)), 0);
+
+        vm.prank(address(engine));
+        vm.expectRevert(ICrabVault.InsufficientLiquidity.selector);
+        vault.pay(recipient, 20 * USDG, 0);
+    }
+
+    function testAdapterPullsCallerFundsAndResetsRouterApproval() public {
+        usdg.mint(address(this), USDG);
+        usdg.approve(address(adapter), USDG);
+
+        uint256 received = adapter.swapExactIn(address(usdg), address(stock), POOL_FEE, USDG, 1e18, address(this));
+
+        assertEq(received, 1.1e18);
+        assertEq(stock.balanceOf(address(this)), 1.1e18);
+        assertEq(usdg.allowance(address(adapter), address(router)), 0);
+        assertEq(usdg.allowance(address(this), address(adapter)), 0);
+    }
+
+    function _deposit(address account, uint256 assets) private {
+        usdg.mint(account, assets);
+        vm.startPrank(account);
+        usdg.approve(address(vault), assets);
+        vault.deposit(assets, account);
+        vm.stopPrank();
+    }
+}
