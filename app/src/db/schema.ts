@@ -52,9 +52,11 @@ export const ticks = pgTable(
     ask: amount("ask").notNull(),
     carryWad: amount("carry_wad").notNull(),
     regime: smallint("regime").notNull(),
+    buysPaused: boolean("buys_paused").notNull().default(false),
     vaultShort: amount("vault_short").notNull(),
     liability: amount("liability").notNull(),
     hedgeUnits: amount("hedge_units").notNull(),
+    hedgeTarget: amount("hedge_target").notNull().default("0"),
     oracleUpdatedAt: at("oracle_updated_at").notNull(),
   },
   (table) => [

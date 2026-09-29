@@ -15,6 +15,13 @@
       "when": 1790780000000,
       "tag": "0001_timescale",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790780000001,
+      "tag": "0002_hedge_target",
+      "breakpoints": true
     }
   ]
 }
