@@ -36,7 +36,7 @@ export interface IndexerMetadata {
   marketsById?: Record<string, IndexedMarket>;
   chainTimestamp?: string;
   chainTimeObservedAt?: string;
-  lagBlocks?: number;
+  lagBlocks?: number | string;
 }
 
 export interface KeeperContext {

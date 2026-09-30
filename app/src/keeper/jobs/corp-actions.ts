@@ -66,7 +66,8 @@ async function fetchJson(url: string): Promise<unknown> {
 export async function updateCorporateActions(context: KeeperContext): Promise<Record<string, unknown>> {
   const metadata = await context.metadata();
   const now = context.now(metadata);
-  const markets = context.deployment.markets;
+  const markets = Object.values(metadata.marketsById ?? {});
+  if (!markets.length) throw new Error("Waiting for indexed market registry before corporate-action checks");
   const responses = await Promise.allSettled([
     fetchJson("https://api.robinhood.com/rhj/assets"),
     fetchJson("https://api.robinhood.com/rhj/corporate-actions"),

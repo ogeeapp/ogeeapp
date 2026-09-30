@@ -45,7 +45,7 @@ export function createRiskJob(context: KeeperContext) {
     }
     const sessions = await context.sql<{ meta: Record<string, unknown> }[]>`select meta from keeper_status where job = 'sessions'`;
     if (Number(sessions[0]?.meta.horizon ?? 0) - now.getTime() / 1000 < 3 * 86400) warnings.push("Market sessions expire within three days");
-    if ((metadata.lagBlocks ?? 0) > 60) warnings.push("Indexer is more than 60 blocks behind");
+    if (Number(metadata.lagBlocks ?? 0) > 60) warnings.push("Indexer is more than 60 blocks behind");
     for (const warning of warnings) context.logger.warn({ warning }, "Keeper risk warning");
     return { warnings, drawdownPct, keeperEth: formatEther(balance) };
   };
