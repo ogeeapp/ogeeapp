@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "api": "bun run src/bin/api.ts",
+    "smoke": "bun run scripts/smoke.ts",
+    "fixtures": "bun run scripts/fixtures.ts",
     "indexer": "bun run src/bin/indexer.ts",
     "keeper": "bun run src/bin/keeper.ts",
     "migrate": "bun run src/bin/migrate.ts",
