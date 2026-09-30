@@ -4,8 +4,11 @@ import type { ApiDependencies } from "./types";
 import { openApiDocument } from "./openapi";
 import { registerAccountRoutes } from "./routes/accounts";
 import { registerConfigRoutes } from "./routes/config";
+import { registerCorporateActionRoutes } from "./routes/corp-actions";
 import { registerHealthRoutes } from "./routes/health";
 import { registerMarketRoutes } from "./routes/markets";
+import { registerStatsRoutes } from "./routes/stats";
+import { registerVaultRoutes } from "./routes/vault";
 import { safeErrorSummary } from "../log";
 
 export function createApiApp(deps: ApiDependencies) {
@@ -41,6 +44,9 @@ export function createApiApp(deps: ApiDependencies) {
   registerConfigRoutes(app, deps);
   registerMarketRoutes(app, deps);
   registerAccountRoutes(app, deps);
+  registerVaultRoutes(app, deps);
+  registerCorporateActionRoutes(app, deps);
+  registerStatsRoutes(app, deps);
 
   app.get("/v1/openapi.json", (context) => {
     try {
