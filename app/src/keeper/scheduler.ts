@@ -36,11 +36,16 @@ export function createScheduler(sql: OgeeDbClient["sql"], logger: Logger) {
     const execute = async () => {
       const started = new Date().toISOString();
       let failed = false;
+      let retryAfterMs: number | undefined;
       try {
         const defaults = JSON.stringify({ intervalMs: definition.everyMs });
         await sql`insert into keeper_status (job, last_run, meta) values (${name}, ${started}, ${defaults}::jsonb)
           on conflict (job) do update set last_run = excluded.last_run, meta = keeper_status.meta || excluded.meta`;
-        const meta = JSON.stringify((await definition.run()) ?? {});
+        const result = (await definition.run()) ?? {};
+        if (typeof result.retryAfterMs === "number" && Number.isFinite(result.retryAfterMs) && result.retryAfterMs > 0) {
+          retryAfterMs = Math.max(1000, Math.min(definition.everyMs, result.retryAfterMs));
+        }
+        const meta = JSON.stringify(result);
         await sql`update keeper_status set last_ok = now(), last_error = null,
           meta = meta || ${meta}::jsonb where job = ${name}`;
       } catch (error) {
@@ -58,7 +63,7 @@ export function createScheduler(sql: OgeeDbClient["sql"], logger: Logger) {
         // An hourly job can start before the first indexer snapshot exists, or
         // encounter a short RPC outage. Retry it within a minute rather than
         // leaving sessions/corporate-action state stale for the full interval.
-        const nextInterval = failed ? Math.min(definition.everyMs, 60000) : definition.everyMs;
+        const nextInterval = failed ? Math.min(definition.everyMs, 60000) : retryAfterMs ?? definition.everyMs;
         const delay = state.pending ? 0 : nextInterval + Math.floor(Math.random() * (definition.jitterMs ?? 0));
         state.pending = false;
         schedule(name, delay);
