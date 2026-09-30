@@ -240,7 +240,7 @@ async function writeIndexerStatus(
   await state.sql`
     INSERT INTO keeper_status (job, last_run, last_ok, last_error, meta)
     VALUES (
-      'indexer', NOW(), CASE WHEN ${errorMessage} IS NULL THEN NOW() ELSE NULL END,
+      'indexer', NOW(), CASE WHEN ${errorMessage}::text IS NULL THEN NOW() ELSE NULL END,
       ${errorMessage}, ${JSON.stringify(meta)}::jsonb
     )
     ON CONFLICT (job) DO UPDATE SET

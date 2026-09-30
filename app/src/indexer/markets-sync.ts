@@ -125,6 +125,22 @@ function normalizeSessions(value: unknown): Record<string, unknown> {
   };
 }
 
+function canonicalSymbol(
+  lensSymbol: unknown,
+  deploymentSymbol: string | undefined,
+  id: number,
+): string {
+  if (deploymentSymbol) return deploymentSymbol.toUpperCase();
+  const powerTokenSymbol = String(lensSymbol ?? "").trim().toUpperCase();
+  // PowerToken.symbol appends "2" to the underlying stock ticker (for example, NVDA2).
+  // API market symbols use the underlying ticker; deployment symbols remain authoritative
+  // for the initial markets.
+  const stockSymbol = powerTokenSymbol.endsWith("2")
+    ? powerTokenSymbol.slice(0, -1)
+    : powerTokenSymbol;
+  return stockSymbol || `MARKET${id}`;
+}
+
 function registryCalls(
   deployment: Deployment,
   marketIds: readonly number[],
@@ -193,7 +209,7 @@ export async function readMarketRegistry(
     const feed = asAddress(onchainConfig.feed ?? deploymentEntry?.feed);
     const scale = asBigInt(onchainConfig.scale ?? lensMarket?.scale ?? deploymentEntry?.scale);
     const routeFee = asNumber(objectField(rawRoute, "poolFee", 1));
-    const symbol = String(lensMarket?.symbol ?? deploymentEntry?.symbol ?? `MARKET${id}`).toUpperCase();
+    const symbol = canonicalSymbol(lensMarket?.symbol, deploymentEntry?.symbol, id);
     const listedBlock =
       listedBlocks.get(id) ??
       existingListedBlocks.get(id) ??
