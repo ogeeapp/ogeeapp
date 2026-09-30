@@ -1,5 +1,6 @@
 {
   "name": "ogee-app",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -18,7 +19,7 @@
     "pino": "^9.7.0",
     "postgres": "^3.4.7",
     "viem": "^2.38.0",
-    "zod": "^3.25.76"
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/bun": "^1.2.18",
