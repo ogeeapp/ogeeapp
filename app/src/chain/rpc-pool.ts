@@ -55,11 +55,15 @@ const CU_BY_METHOD: Readonly<Record<string, number>> = {
   eth_getTransactionReceipt: 15,
 };
 
-function defaultRequestFactory(endpoint: RpcEndpointInfo): RpcEndpointRequest {
+function defaultRequestFactory(
+  endpoint: RpcEndpointInfo,
+  fetchFn?: typeof fetch,
+): RpcEndpointRequest {
   const transport = http(endpoint.url, {
     timeout: 8_000,
     retryCount: 0,
     batch: { batchSize: 20, wait: 20 },
+    ...(fetchFn ? { fetchFn } : {}),
   })({ chain: robinhoodChain });
 
   return (request) => transport.request(request as never) as Promise<unknown>;
@@ -243,6 +247,7 @@ function rpcError(message: string): Error {
 
 export interface RpcPoolOptions {
   readonly requestFactory?: RpcRequestFactory;
+  readonly fetchFn?: typeof fetch;
   readonly now?: () => number;
 }
 
@@ -277,7 +282,8 @@ export class RpcPool {
 
   constructor(private readonly config: RuntimeConfig, options: RpcPoolOptions = {}) {
     this.now = options.now ?? Date.now;
-    const requestFactory = options.requestFactory ?? defaultRequestFactory;
+    const requestFactory =
+      options.requestFactory ?? ((endpoint) => defaultRequestFactory(endpoint, options.fetchFn));
     if (config.RPC_URL_OVERRIDE.trim()) {
       this.endpoints = [
         this.makeEndpoint(
@@ -369,6 +375,52 @@ export class RpcPool {
     } finally {
       if (this.inFlight.get(dedupeKey) === work) this.inFlight.delete(dedupeKey);
     }
+  }
+
+  /**
+   * Send a group of independent JSON-RPC calls together through the same
+   * endpoint. The default HTTP transport batches concurrent requests, while
+   * this wrapper keeps the group on one route endpoint and accounts for each
+   * JSON-RPC method separately.
+   */
+  async requestBatch(callClass: RpcCallClass, requests: readonly RpcRequest[]): Promise<unknown[]> {
+    if (requests.length === 0) return [];
+
+    const route = this.route(callClass);
+    const attempted = new Set<string>();
+    const now = this.now();
+    const healthy = route.filter((endpoint) => endpoint.coolUntil <= now);
+    const candidates = healthy.length ? healthy : route;
+
+    for (const endpoint of candidates) {
+      if (attempted.has(endpoint.id)) continue;
+      attempted.add(endpoint.id);
+      if (endpoint.coolUntil > this.now()) continue;
+
+      for (const request of requests) this.recordRequest(callClass, endpoint, request.method);
+      try {
+        // Calling the same endpoint transport concurrently lets viem's HTTP
+        // batch scheduler emit one JSON-RPC array while preserving response
+        // ordering for callers.
+        const results = await Promise.all(requests.map((request) => endpoint.request(request)));
+        endpoint.failures = 0;
+        endpoint.coolUntil = 0;
+        return results;
+      } catch (error) {
+        for (const _request of requests) this.recordError(callClass, endpoint);
+        if (isExecutionError(error) || !isTransientTransportError(error)) {
+          throw safeRpcError(error, this.config.ALCHEMY_API_KEYS);
+        }
+        this.cool(endpoint);
+      }
+    }
+
+    const last = route.find((endpoint) => attempted.has(endpoint.id));
+    throw rpcError(
+      last
+        ? `All RPC endpoints for ${callClass} are cooling after transient failures (last: ${last.id})`
+        : `No RPC endpoints are configured for ${callClass}`,
+    );
   }
 
   private async requestWithFailover(

@@ -47,6 +47,59 @@ assert.equal(await stablePool.request("state", { method: "eth_chainId" }), "0x12
 assert.equal(routingCalls.filter((call) => call.endsWith(":eth_chainId")).length, 1);
 assert.equal(routingCalls[0], "public:eth_chainId");
 
+const batchCalls: string[] = [];
+const batchPool = new RpcPool(testConfig(), {
+  requestFactory: (endpoint: RpcEndpointInfo) => async ({ method, params }) => {
+    batchCalls.push(`${endpoint.id}:${method}:${String(params?.[0] ?? "")}`);
+    return method === "eth_getLogs" ? [{ address: params?.[0] }] : null;
+  },
+});
+const batchResult = await batchPool.requestBatch("logs", [
+  { method: "eth_getLogs", params: [{ address: ["0x1"], fromBlock: "0x1", toBlock: "0x2" }] },
+  { method: "eth_getLogs", params: [{ address: ["0x2"], fromBlock: "0x1", toBlock: "0x2" }] },
+]);
+assert.deepEqual(batchResult, [[{ address: { address: ["0x1"], fromBlock: "0x1", toBlock: "0x2" } }], [{ address: { address: ["0x2"], fromBlock: "0x1", toBlock: "0x2" } }]]);
+assert.deepEqual(batchCalls.map((call) => call.split(":")[0]), ["public", "public"]);
+assert.equal(batchPool.stats().classes.logs.requests, 2);
+assert.equal(batchPool.stats().classes.logs.estimatedCu, 150);
+
+const httpBatches: { url: string; payload: unknown }[] = [];
+const mockFetch = Object.assign(
+  async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const payload: unknown = JSON.parse(String(init?.body));
+    httpBatches.push({ url: String(input), payload });
+    const requests = payload as { id: number; method: string; params?: unknown[] }[];
+    return new Response(
+      JSON.stringify(
+        requests.map((request) => ({
+          jsonrpc: "2.0",
+          id: request.id,
+          result: { method: request.method, filter: request.params?.[0] },
+        })),
+      ),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  },
+  { preconnect: async (_url: string | URL) => undefined },
+) as typeof fetch;
+const httpBatchPool = new RpcPool(testConfig(), {
+  fetchFn: mockFetch,
+});
+const httpBatchResult = await httpBatchPool.requestBatch("logs", [
+  { method: "eth_getLogs", params: [{ address: ["0x1"], fromBlock: "0x1", toBlock: "0x2" }] },
+  { method: "eth_getLogs", params: [{ address: ["0x2"], fromBlock: "0x1", toBlock: "0x2" }] },
+]);
+assert.equal(httpBatches.length, 1, "requestBatch must issue one HTTP JSON-RPC batch");
+assert.equal(httpBatches[0]?.url, "https://public.invalid/");
+assert.deepEqual(
+  (httpBatches[0]?.payload as { method: string }[]).map((request) => request.method),
+  ["eth_getLogs", "eth_getLogs"],
+);
+assert.deepEqual(
+  httpBatchResult.map((result) => (result as { filter: { address: string[] } }).filter.address),
+  [["0x1"], ["0x2"]],
+);
+
 let fakeNow = 1_000;
 let latestCodeReads = 0;
 const latestCodePool = new RpcPool(testConfig(), {
@@ -121,5 +174,5 @@ assert.equal(serializedError.includes("test-key-one"), false);
 assert.equal(serializedError.includes("test-key-two"), false);
 
 console.info(
-  "RPC pool checks passed: public-first state routing, Alchemy key rotation, single-flight, chainId/code caching, and sanitized revert data.",
+  "RPC pool checks passed: public-first routing, batched request accounting, Alchemy key rotation, single-flight, chainId/code caching, and sanitized revert data.",
 );
