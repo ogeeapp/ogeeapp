@@ -75,4 +75,20 @@ describe("keeper transaction queue", () => {
     await expect(queue.submit(transaction)).rejects.toThrow("nonce 8 remains held");
     expect(h.sent.map((raw) => parseTransaction(raw).nonce)).toEqual([7, 7, 8, 8]);
   });
+
+  test("a lost broadcast response resolves the locally signed hash without duplicating the transaction", async () => {
+    const h = harness();
+    const send = h.client.txClient.sendRawTransaction;
+    h.client.txClient.sendRawTransaction = async (request) => {
+      await send(request);
+      throw new Error("RPC accepted the transaction but lost its response");
+    };
+    const queue = createTransactionQueue(h.client, { dryRun: false, logger: createLogger("silent"), receiptTimeoutMs: 0 });
+    const first = await queue.submit(transaction);
+    const second = await queue.submit(transaction);
+    expect(first.receipt?.status).toBe("success");
+    expect(second.receipt?.status).toBe("success");
+    expect(h.sent.map((raw) => parseTransaction(raw).nonce)).toEqual([7, 8]);
+    expect(first.hash).toBe(keccak256(h.sent[0]!));
+  });
 });
