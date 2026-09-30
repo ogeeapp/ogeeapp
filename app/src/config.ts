@@ -35,6 +35,7 @@ const envSchema = z.object({
     .optional()
     .or(z.literal("")),
   KEEPER_ENABLED_JOBS: z.string().default("sessions,accrue,hedge,carry,risk,corp-actions"),
+  KEEPER_DRY_RUN: z.enum(["0", "1"]).default("0").transform((value) => value === "1"),
   API_PORT: z.coerce.number().int().min(1).max(65535).default(3101),
   CORS_ORIGINS: z.string().default(""),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
