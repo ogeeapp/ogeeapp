@@ -81,6 +81,14 @@ export async function healthResponse(deps: ApiDependencies) {
   const warnings: string[] = [];
   if (lag !== null && lag > 60) warnings.push(`Indexer is ${lag} blocks behind.`);
   const nowMs = Date.now();
+  if (indexer?.last_error) {
+    warnings.push(`Indexer processing failed: ${safeErrorSummary(new Error(indexer.last_error)).message}`);
+  }
+  const indexerLastOk = dateValue(indexer?.last_ok);
+  if (!indexerLastOk) warnings.push("Indexer has not completed initial synchronization.");
+  else if (nowMs - indexerLastOk.getTime() > Math.max(60_000, 3 * deps.config.INDEXER_POLL_IDLE_MS)) {
+    warnings.push("Indexer has stopped reporting successful polls.");
+  }
   for (const row of statuses) {
     if (row.job === "indexer" || row.job === "api") continue;
     const meta = jsonRecord(row.meta);
