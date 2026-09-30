@@ -1,6 +1,7 @@
 [profile.default]
 src = "src"
 out = "out"
+cache_path = "cache"
 libs = ["lib"]
 test = "test"
 solc_version = "0.8.28"
@@ -13,6 +14,7 @@ evm_version = "cancun"
 remappings = [
   "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
   "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
+  "ogee-contracts/=src/",
   "forge-std/=lib/forge-std/src/",
 ]
 
