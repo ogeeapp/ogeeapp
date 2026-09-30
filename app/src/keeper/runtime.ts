@@ -144,11 +144,15 @@ if (context && !abort.signal.aborted) {
           const key = `${boundary}:${offset}`;
           const delay = (Number(boundary) + offset) * 1000 - now;
           if (delay < -90000 || delay > 2147483647 || firedBoundaries.has(key)) continue;
+          const dueWallTime = Date.now() + delay;
           boundaryTimers.push(setTimeout(() => {
             firedBoundaries.add(key); forceAccrue = true;
-            if (delay < -5000) {
-              logger.warn({ key, lateSeconds: -delay / 1000 }, "Keeper boundary accrual is late");
-              void saveJobMeta(ctx, "accrue", { lateBoundary: key, lateSeconds: -delay / 1000 }).catch(() => undefined);
+            const lateSeconds = (Date.now() - dueWallTime) / 1000;
+            if (lateSeconds > 5) {
+              logger.warn({ key, lateSeconds }, "Keeper boundary accrual is late");
+              void saveJobMeta(ctx, "accrue", {
+                lateBoundary: key, lateSeconds, lateBoundaryObservedAt: new Date().toISOString(),
+              }).catch(() => undefined);
             }
             void scheduler.trigger("accrue");
           }, Math.max(0, delay)));
