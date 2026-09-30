@@ -102,7 +102,17 @@ if (context && !abort.signal.aborted) {
   const ctx = context;
   const definitions = [
     { name: "sessions", everyMs: 3600000, run: () => updateSessions(ctx) },
-    { name: "accrue", everyMs: 60000, run: () => { const force = forceAccrue; forceAccrue = false; return accrueStale(ctx, force); } },
+    { name: "accrue", everyMs: 60000, run: async () => {
+      const force = forceAccrue;
+      forceAccrue = false;
+      try { return await accrueStale(ctx, force); }
+      catch (error) {
+        // Preserve a failed boundary request across the scheduler's retry. A
+        // recent regular accrual must not suppress it for another six hours.
+        forceAccrue ||= force;
+        throw error;
+      }
+    } },
     { name: "hedge", everyMs: 900000, run: createHedgeJob(ctx) },
     { name: "carry", everyMs: 60000, run: () => updateCarry(ctx) },
     { name: "risk", everyMs: 60000, run: createRiskJob(ctx) },
