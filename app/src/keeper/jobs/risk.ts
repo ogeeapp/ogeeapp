@@ -18,7 +18,7 @@ export function createRiskJob(context: KeeperContext) {
     if (balance < 2_000_000_000_000_000n) warnings.push("Keeper ETH balance is below 0.002");
     const navs = await context.sql<{ current: string | null; peak: string | null }[]>`
       select (select nav_per_share from vault_ticks order by ts desc limit 1) as current,
-        max(nav_per_share) as peak from vault_ticks where ts >= ${new Date(now.getTime() - 30 * 86400000)}`;
+        max(nav_per_share) as peak from vault_ticks where ts >= ${new Date(now.getTime() - 30 * 86400000).toISOString()}`;
     const current = Number(navs[0]?.current ?? 0);
     const peak = Number(navs[0]?.peak ?? 0);
     const drawdownPct = peak > 0 ? (peak - current) / peak * 100 : 0;

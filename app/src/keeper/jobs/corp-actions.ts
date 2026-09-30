@@ -50,7 +50,7 @@ export function normalizeCorporateActions(payload: unknown, markets: readonly { 
 
 async function upsert(context: KeeperContext, action: Action): Promise<void> {
   await context.sql`insert into corp_actions (id,symbol,kind,status,process_date,effective_at,old_mult,new_mult,details,source)
-    values (${action.id},${action.symbol},${action.kind},${action.status},${action.processDate},${action.effectiveAt},
+    values (${action.id},${action.symbol},${action.kind},${action.status},${action.processDate},${action.effectiveAt?.toISOString() ?? null},
       ${action.oldMult},${action.newMult},${JSON.stringify(action.details)}::jsonb,${action.source})
     on conflict (id) do update set status=excluded.status,process_date=excluded.process_date,
       effective_at=coalesce(excluded.effective_at,corp_actions.effective_at),old_mult=coalesce(excluded.old_mult,corp_actions.old_mult),
@@ -125,14 +125,14 @@ export async function updateCorporateActions(context: KeeperContext): Promise<Re
 
   const pending = await context.sql<{ id: string; market_id: number; effective_at: Date }[]>`
     select a.id,m.id as market_id,a.effective_at from corp_actions a join markets m on a.symbol=m.symbol
-    where a.effective_at <= ${new Date(now.getTime() - 3600000)} and a.verified_continuity is null`;
+    where a.effective_at <= ${new Date(now.getTime() - 3600000).toISOString()} and a.verified_continuity is null`;
   for (const action of pending) {
     const from = new Date(action.effective_at.getTime() - 3600000);
     const to = new Date(action.effective_at.getTime() + 3600000);
     const rows = await context.sql<{ before: string | null; after: string | null }[]>`
-      select avg("index") filter(where ts < ${action.effective_at}) as before,
-        avg("index") filter(where ts >= ${action.effective_at}) as after
-      from ticks where market_id=${action.market_id} and ts between ${from} and ${to}`;
+      select avg("index") filter(where ts < ${action.effective_at.toISOString()}) as before,
+        avg("index") filter(where ts >= ${action.effective_at.toISOString()}) as after
+      from ticks where market_id=${action.market_id} and ts between ${from.toISOString()} and ${to.toISOString()}`;
     const before = Number(rows[0]?.before ?? 0);
     const after = Number(rows[0]?.after ?? 0);
     if (!(before > 0 && after > 0)) continue;

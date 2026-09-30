@@ -112,7 +112,7 @@ if (context && !abort.signal.aborted) {
   const listener = await sql.listen("ogee_events", (payload) => {
     try {
       const event = JSON.parse(payload) as { kinds?: string[] };
-      if (event.kinds?.some((kind) => ["trade", "oracle"].includes(kind))) void scheduler.trigger("hedge");
+      if (event.kinds?.some((kind) => ["trade", "oracle", "snapshot"].includes(kind))) void scheduler.trigger("hedge");
       if (event.kinds?.includes("config")) void scheduler.trigger("sessions");
     } catch { logger.warn("Ignored malformed ogee_events notification"); }
   });

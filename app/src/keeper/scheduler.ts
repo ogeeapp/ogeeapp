@@ -34,7 +34,7 @@ export function createScheduler(sql: OgeeDbClient["sql"], logger: Logger) {
     if (state.timer) clearTimeout(state.timer);
     const definition = state.definition;
     const execute = async () => {
-      const started = new Date();
+      const started = new Date().toISOString();
       try {
         const defaults = sql.json({ intervalMs: definition.everyMs });
         await sql`insert into keeper_status (job, last_run, meta) values (${name}, ${started}, ${defaults})

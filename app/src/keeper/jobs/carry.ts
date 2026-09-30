@@ -15,8 +15,8 @@ export async function updateCarry(context: KeeperContext): Promise<Record<string
   for (const [id, market] of Object.entries(meta.marketsById)) {
     const closes = await context.sql<{ spot: string }[]>`
       select last(spot, ts) as spot from ticks
-      where market_id = ${Number(id)} and regime = 0 and ts >= ${new Date(now.getTime() - 30 * 86400000)}
-        and ts <= ${now} group by time_bucket(interval '1 hour', ts) order by time_bucket(interval '1 hour', ts)`;
+      where market_id = ${Number(id)} and regime = 0 and ts >= ${new Date(now.getTime() - 30 * 86400000).toISOString()}
+        and ts <= ${now.toISOString()} group by time_bucket(interval '1 hour', ts) order by time_bucket(interval '1 hour', ts)`;
     samples[id] = closes.length;
     if (closes.length < 7 * 24) continue;
     const returns = closes.slice(1).map((point, i) => Math.log(Number(point.spot) / Number(closes[i]!.spot)));
