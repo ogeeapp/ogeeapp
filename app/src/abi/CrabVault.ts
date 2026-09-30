@@ -1,5 +1,23 @@
 export const CrabVaultAbi = [
   {
+    "type": "constructor",
+    "inputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "DEFAULT_ADMIN_ROLE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
     "type": "function",
     "name": "KEEPER_ROLE",
     "inputs": [],
@@ -8,6 +26,19 @@ export const CrabVaultAbi = [
         "name": "",
         "type": "bytes32",
         "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "UPGRADE_INTERFACE_VERSION",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
       }
     ],
     "stateMutability": "view"
@@ -66,7 +97,7 @@ export const CrabVaultAbi = [
     "inputs": [],
     "outputs": [
       {
-        "name": "assetTokenAddress",
+        "name": "",
         "type": "address",
         "internalType": "address"
       }
@@ -117,7 +148,7 @@ export const CrabVaultAbi = [
     ],
     "outputs": [
       {
-        "name": "assets",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -136,7 +167,7 @@ export const CrabVaultAbi = [
     ],
     "outputs": [
       {
-        "name": "shares",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -173,7 +204,7 @@ export const CrabVaultAbi = [
     ],
     "outputs": [
       {
-        "name": "shares",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -296,7 +327,7 @@ export const CrabVaultAbi = [
         "internalType": "address"
       },
       {
-        "name": "usdg",
+        "name": "usdg_",
         "type": "address",
         "internalType": "contract IERC20"
       },
@@ -330,6 +361,25 @@ export const CrabVaultAbi = [
   },
   {
     "type": "function",
+    "name": "lastDeposit",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "timestamp",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "lockSeconds",
     "inputs": [],
     "outputs": [
@@ -353,7 +403,7 @@ export const CrabVaultAbi = [
     ],
     "outputs": [
       {
-        "name": "maxAssets",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -385,7 +435,7 @@ export const CrabVaultAbi = [
     ],
     "outputs": [
       {
-        "name": "maxShares",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -404,7 +454,7 @@ export const CrabVaultAbi = [
     ],
     "outputs": [
       {
-        "name": "maxShares",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -436,7 +486,7 @@ export const CrabVaultAbi = [
     ],
     "outputs": [
       {
-        "name": "maxAssets",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -473,7 +523,7 @@ export const CrabVaultAbi = [
     ],
     "outputs": [
       {
-        "name": "assets",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -554,7 +604,7 @@ export const CrabVaultAbi = [
     ],
     "outputs": [
       {
-        "name": "shares",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -573,7 +623,7 @@ export const CrabVaultAbi = [
     ],
     "outputs": [
       {
-        "name": "assets",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -592,7 +642,7 @@ export const CrabVaultAbi = [
     ],
     "outputs": [
       {
-        "name": "assets",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -611,9 +661,22 @@ export const CrabVaultAbi = [
     ],
     "outputs": [
       {
-        "name": "shares",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "proxiableUUID",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
@@ -685,7 +748,7 @@ export const CrabVaultAbi = [
     ],
     "outputs": [
       {
-        "name": "assets",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -798,37 +861,37 @@ export const CrabVaultAbi = [
     "name": "setParams",
     "inputs": [
       {
-        "name": "lockSeconds",
+        "name": "lockSeconds_",
         "type": "uint32",
         "internalType": "uint32"
       },
       {
-        "name": "cashBufferBps",
+        "name": "cashBufferBps_",
         "type": "uint16",
         "internalType": "uint16"
       },
       {
-        "name": "hedgeRatioBps",
+        "name": "hedgeRatioBps_",
         "type": "uint16",
         "internalType": "uint16"
       },
       {
-        "name": "rebalanceThresholdBps",
+        "name": "rebalanceThresholdBps_",
         "type": "uint16",
         "internalType": "uint16"
       },
       {
-        "name": "maxHedgeSlippageBps",
+        "name": "maxHedgeSlippageBps_",
         "type": "uint16",
         "internalType": "uint16"
       },
       {
-        "name": "minHedgeTradeUsdg",
+        "name": "minHedgeTradeUsdg_",
         "type": "uint128",
         "internalType": "uint128"
       },
       {
-        "name": "maxTotalDeposits",
+        "name": "maxTotalDeposits_",
         "type": "uint128",
         "internalType": "uint128"
       }
@@ -848,6 +911,25 @@ export const CrabVaultAbi = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "supportsInterface",
+    "inputs": [
+      {
+        "name": "interfaceId",
+        "type": "bytes4",
+        "internalType": "bytes4"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -881,7 +963,7 @@ export const CrabVaultAbi = [
     "inputs": [],
     "outputs": [
       {
-        "name": "totalManagedAssets",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -975,6 +1057,37 @@ export const CrabVaultAbi = [
   },
   {
     "type": "function",
+    "name": "upgradeToAndCall",
+    "inputs": [
+      {
+        "name": "newImplementation",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "data",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "usdg",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IERC20"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "withdraw",
     "inputs": [
       {
@@ -995,7 +1108,7 @@ export const CrabVaultAbi = [
     ],
     "outputs": [
       {
-        "name": "shares",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1185,6 +1298,19 @@ export const CrabVaultAbi = [
   },
   {
     "type": "event",
+    "name": "Initialized",
+    "inputs": [
+      {
+        "name": "version",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "ParamsUpdated",
     "inputs": [
       {
@@ -1347,6 +1473,19 @@ export const CrabVaultAbi = [
   },
   {
     "type": "event",
+    "name": "Upgraded",
+    "inputs": [
+      {
+        "name": "implementation",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Withdraw",
     "inputs": [
       {
@@ -1405,12 +1544,214 @@ export const CrabVaultAbi = [
   },
   {
     "type": "error",
+    "name": "AddressEmptyCode",
+    "inputs": [
+      {
+        "name": "target",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "DepositCapReached",
     "inputs": []
   },
   {
     "type": "error",
+    "name": "ERC1967InvalidImplementation",
+    "inputs": [
+      {
+        "name": "implementation",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC1967NonPayable",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ERC20InsufficientAllowance",
+    "inputs": [
+      {
+        "name": "spender",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "allowance",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "needed",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC20InsufficientBalance",
+    "inputs": [
+      {
+        "name": "sender",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "balance",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "needed",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC20InvalidApprover",
+    "inputs": [
+      {
+        "name": "approver",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC20InvalidReceiver",
+    "inputs": [
+      {
+        "name": "receiver",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC20InvalidSender",
+    "inputs": [
+      {
+        "name": "sender",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC20InvalidSpender",
+    "inputs": [
+      {
+        "name": "spender",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC4626ExceededMaxDeposit",
+    "inputs": [
+      {
+        "name": "receiver",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "assets",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "max",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC4626ExceededMaxMint",
+    "inputs": [
+      {
+        "name": "receiver",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "shares",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "max",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC4626ExceededMaxRedeem",
+    "inputs": [
+      {
+        "name": "owner",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "shares",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "max",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC4626ExceededMaxWithdraw",
+    "inputs": [
+      {
+        "name": "owner",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "assets",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "max",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "ExposureLimitReached",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "FailedCall",
     "inputs": []
   },
   {
@@ -1426,6 +1767,11 @@ export const CrabVaultAbi = [
   {
     "type": "error",
     "name": "InvalidEngine",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidInitialization",
     "inputs": []
   },
   {
@@ -1455,8 +1801,45 @@ export const CrabVaultAbi = [
   },
   {
     "type": "error",
+    "name": "NotInitializing",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ReentrancyGuardReentrantCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "RegimePaused",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SafeERC20FailedOperation",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UUPSUnauthorizedCallContext",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UUPSUnsupportedProxiableUUID",
+    "inputs": [
+      {
+        "name": "slot",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
   },
   {
     "type": "error",
