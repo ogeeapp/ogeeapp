@@ -5,6 +5,8 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IStockToken} from "../../src/interfaces/IStockToken.sol";
 
 contract MockStockToken is ERC20, IStockToken {
+    event OraclePaused();
+    event OracleUnpaused();
     bool public override oraclePaused;
     uint256 public override uiMultiplier = 1e18;
     uint256 public override newUIMultiplier = 1e18;
@@ -14,6 +16,8 @@ contract MockStockToken is ERC20, IStockToken {
 
     function setOraclePaused(bool paused) external {
         oraclePaused = paused;
+        if (paused) emit OraclePaused();
+        else emit OracleUnpaused();
     }
 
     function setMultipliers(uint256 current, uint256 pending, uint256 effectiveAt_) external {
