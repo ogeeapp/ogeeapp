@@ -155,6 +155,63 @@ contract CrabVaultTest is Test {
         assertEq(stock.allowance(address(vault), address(adapter)), 0);
     }
 
+    function testNavGuardNeutralizesDepositorFrontRunningOfFeedUpdate() public {
+        _deposit(bob, 100 * USDG);
+        // Unhedged $20 power liability at spot $1: a 0.5% feed drop raises NAV by 20·(1 − 0.995²) = $0.1995.
+        engine.setMarket(0, Regime.OPEN, 1e18, true, 1e18, 20e18, 0);
+        (int256 nav, int256 low, int256 high) = vault.navBand();
+        assertEq(nav, 80e18);
+        assertEq(high - nav, 0.1995e18);
+        assertEq(nav - low, 0.2005e18);
+        assertLt(vault.previewDeposit(10 * USDG), vault.convertToShares(10 * USDG));
+
+        // Alice knows the drop is coming, deposits, the feed moves, and she exits after the lock.
+        _deposit(alice, 10 * USDG);
+        engine.setMarket(0, Regime.OPEN, 0.995e18, true, 0.995e18, 19.8005e18, 0);
+        vm.warp(vault.unlockTime(alice));
+        uint256 shares = vault.balanceOf(alice);
+        vm.prank(alice);
+        uint256 out = vault.redeem(shares, alice, alice);
+        assertLe(out, 10 * USDG, "front-running a known feed move must not profit");
+    }
+
+    function testWithoutNavGuardTheSameFrontRunProfits() public {
+        vault.setNavGuard(0, 0);
+        _deposit(bob, 100 * USDG);
+        engine.setMarket(0, Regime.OPEN, 1e18, true, 1e18, 20e18, 0);
+        _deposit(alice, 10 * USDG);
+        engine.setMarket(0, Regime.OPEN, 0.995e18, true, 0.995e18, 19.8005e18, 0);
+        vm.warp(vault.unlockTime(alice));
+        uint256 shares = vault.balanceOf(alice);
+        vm.prank(alice);
+        assertGt(vault.redeem(shares, alice, alice), 10 * USDG);
+    }
+
+    function testNavGuardChargesOnlyGammaWhenFullyHedged() public {
+        _deposit(bob, 100 * USDG);
+        stock.mint(address(vault), 40e18);
+        vault.syncHedgeUnits(0);
+        // Delta-neutral: hedge value 2L. Only the short-gamma term L·m² remains.
+        engine.setMarket(0, Regime.OPEN, 1e18, true, 1e18, 20e18, 0);
+        (int256 nav, int256 low, int256 high) = vault.navBand();
+        assertEq(high, nav);
+        assertEq(nav - low, 0.0005e18);
+    }
+
+    function testNavGuardUsesClosedMoveOffHoursAndIsAdminBounded() public {
+        _deposit(bob, 100 * USDG);
+        engine.setMarket(0, Regime.OFF_HOURS, 1e18, true, 1e18, 20e18, 0);
+        (int256 nav, int256 low,) = vault.navBand();
+        assertEq(nav - low, 20e18 * 600 / 10_000 + 20e18 * 9 / 10_000);
+
+        vm.expectRevert(ICrabVault.InvalidParams.selector);
+        vault.setNavGuard(2_001, 300);
+        vault.setNavGuard(0, 0);
+        (nav, low,) = vault.navBand();
+        assertEq(low, nav);
+        assertEq(vault.previewRedeem(1e12), vault.convertToAssets(1e12));
+    }
+
     function testWithdrawAndRedeemStayInsideLiabilityReserve() public {
         _deposit(alice, 100 * USDG);
         engine.setMarket(0, Regime.OPEN, 1e18, true, 1e18, 10e18, 0);

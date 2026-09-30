@@ -61,6 +61,13 @@ struct MarketState {
     uint128 pausedSellUsed;
 }
 
+/// @notice Per-market valuation input the engine hands to the vault: regime spot, liability, and regime.
+struct ValuationMark {
+    uint256 spot;
+    uint256 liability;
+    Regime regime;
+}
+
 struct MarketView {
     uint8 id;
     address token;

@@ -357,11 +357,18 @@ contract PowerEngineTest is PowerEngineFixture {
         engine.sell(0, 7e17, 0, ALICE, block.timestamp + 1 days);
     }
 
-    function testStockTokenPausePausesRegimeAndBlocksBuys() public {
+    function testStockTransferPauseBlocksBuysButNotSells() public {
+        uint256 received = _buy(5 * USDG);
         stock.setPaused(true);
-        assertEq(uint8(engine.currentRegime(0)), uint8(Regime.PAUSED));
+        vm.expectRevert(IPowerEngine.RegimePaused.selector);
+        engine.quoteBuy(0, USDG);
         vm.expectRevert(IPowerEngine.RegimePaused.selector);
         _buy(USDG);
+
+        vm.warp(block.timestamp + 1);
+        vm.prank(ALICE);
+        engine.sell(0, received, 0, ALICE, block.timestamp + 1 days);
+        assertEq(token.balanceOf(ALICE), 0);
     }
 
     function testListingRejectsDuplicateStockAndOversizedPausedSpread() public {

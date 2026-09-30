@@ -6,7 +6,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IAggregatorV3} from "./IAggregatorV3.sol";
 import {ICrabVault} from "./ICrabVault.sol";
 import {IMarketHours} from "./IMarketHours.sol";
-import {MarketConfig, MarketState, Regime} from "../libs/OgeeTypes.sol";
+import {MarketConfig, MarketState, Regime, ValuationMark} from "../libs/OgeeTypes.sol";
 
 interface IPowerEngine is IAccessControl {
     error ZeroAddress();
@@ -152,6 +152,8 @@ interface IPowerEngine is IAccessControl {
     function liability(uint8 id) external view returns (uint256 liabilityWad);
 
     function totalLiability() external view returns (uint256 liabilityWad);
+
+    function valuation() external view returns (uint256 totalLiabilityWad, ValuationMark[] memory marks);
 
     function hedgeDelta(uint8 id) external view returns (uint256 units);
 

@@ -26,6 +26,10 @@ contract MockVault {
         return navWad;
     }
 
+    function navFor(uint256, uint256[] memory) external view returns (int256) {
+        return navWad;
+    }
+
     function pay(address to, uint256 amount, uint8) external {
         if (msg.sender != engine) revert OnlyEngine();
         require(usdg.transfer(to, amount));

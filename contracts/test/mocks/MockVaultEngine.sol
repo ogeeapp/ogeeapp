@@ -3,7 +3,7 @@ pragma solidity 0.8.28;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IStockToken} from "../../src/interfaces/IStockToken.sol";
-import {MarketConfig, MarketState, Regime} from "../../src/libs/OgeeTypes.sol";
+import {MarketConfig, MarketState, Regime, ValuationMark} from "../../src/libs/OgeeTypes.sol";
 
 /// @dev Narrow engine double exposing the view surface CrabVault consumes.
 contract MockVaultEngine {
@@ -65,6 +65,17 @@ contract MockVaultEngine {
 
     function totalLiability() external view returns (uint256 total) {
         for (uint256 i; i < _liabilities.length; ++i) {
+            total += _liabilities[i];
+        }
+    }
+
+    function valuation() external view returns (uint256 total, ValuationMark[] memory marks) {
+        uint256 count = _configs.length;
+        marks = new ValuationMark[](count);
+        for (uint256 i; i < count; ++i) {
+            MarketState memory state = _states[i];
+            uint256 spot = state.regime == Regime.PAUSED || !_spotValid[i] ? state.lastGoodPrice : _spots[i];
+            marks[i] = ValuationMark({spot: spot, liability: _liabilities[i], regime: state.regime});
             total += _liabilities[i];
         }
     }

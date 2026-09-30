@@ -67,13 +67,15 @@ contract MarketHours is Initializable, AccessControlUpgradeable, UUPSUpgradeable
 
     /// @notice Returns whether timestamp falls within a stored half-open session interval.
     function isOpen(uint256 timestamp) external view override returns (bool) {
-        uint256 count = _sessions.length;
-        for (uint256 i; i < count; ++i) {
-            Session storage session = _sessions[i];
-            if (timestamp < session.open) return false;
-            if (timestamp < session.close) return true;
+        // Sessions are sorted and non-overlapping: binary-search the last session opening at or before timestamp.
+        uint256 low;
+        uint256 high = _sessions.length;
+        while (low < high) {
+            uint256 mid = (low + high) / 2;
+            if (_sessions[mid].open <= timestamp) low = mid + 1;
+            else high = mid;
         }
-        return false;
+        return low != 0 && timestamp < _sessions[low - 1].close;
     }
 
     /// @notice Returns all stored sessions, including expired sessions awaiting pruning.

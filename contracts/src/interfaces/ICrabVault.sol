@@ -37,6 +37,7 @@ interface ICrabVault is IERC4626, IAccessControl {
     event Hedged(uint8 indexed id, bool buy, uint256 amountIn, uint256 amountOut, uint256 hedgeUnitsAfter);
     event CashRaised(uint8 indexed id, uint256 stockSold, uint256 usdgOut);
     event HedgeUnitsSynced(uint8 indexed id, uint256 hedgeUnits);
+    event NavGuardUpdated(uint16 openBps, uint16 closedBps);
 
     function KEEPER_ROLE() external view returns (bytes32);
 
@@ -47,6 +48,16 @@ interface ICrabVault is IERC4626, IAccessControl {
     function navView() external view returns (int256 navWad);
 
     function navPerShareWad() external view returns (uint256);
+
+    function navBand() external view returns (int256 navWad, int256 lowWad, int256 highWad);
+
+    function navFor(uint256 liabilityWad, uint256[] memory spots) external view returns (int256 navWad);
+
+    function setNavGuard(uint16 openBps, uint16 closedBps) external;
+
+    function navGuardOpenBps() external view returns (uint16);
+
+    function navGuardClosedBps() external view returns (uint16);
 
     function setDepositor(address account, bool allowed) external;
 
