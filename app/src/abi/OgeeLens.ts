@@ -16,7 +16,7 @@ export const OgeeLensAbi = [
     ],
     "outputs": [
       {
-        "name": "",
+        "name": "result",
         "type": "tuple",
         "internalType": "struct AccountView",
         "components": [
@@ -82,7 +82,7 @@ export const OgeeLensAbi = [
     ],
     "outputs": [
       {
-        "name": "",
+        "name": "result",
         "type": "tuple[]",
         "internalType": "struct MarketView[]",
         "components": [
@@ -223,7 +223,7 @@ export const OgeeLensAbi = [
     ],
     "outputs": [
       {
-        "name": "",
+        "name": "result",
         "type": "tuple",
         "internalType": "struct VaultView",
         "components": [
