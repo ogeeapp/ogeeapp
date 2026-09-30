@@ -11,7 +11,7 @@ WITH NO DATA;
 --> statement-breakpoint
 SELECT add_continuous_aggregate_policy(
   'market_carry_1d',
-  start_offset => INTERVAL '35 days',
+  start_offset => INTERVAL '28 days',
   end_offset => INTERVAL '2 days',
   schedule_interval => INTERVAL '1 hour'
 );
