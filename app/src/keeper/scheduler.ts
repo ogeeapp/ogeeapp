@@ -35,6 +35,7 @@ export function createScheduler(sql: OgeeDbClient["sql"], logger: Logger) {
     const definition = state.definition;
     const execute = async () => {
       const started = new Date().toISOString();
+      let failed = false;
       try {
         const defaults = sql.json({ intervalMs: definition.everyMs });
         await sql`insert into keeper_status (job, last_run, meta) values (${name}, ${started}, ${defaults})
@@ -43,6 +44,7 @@ export function createScheduler(sql: OgeeDbClient["sql"], logger: Logger) {
         await sql`update keeper_status set last_ok = now(), last_error = null,
           meta = meta || ${meta}::jsonb where job = ${name}`;
       } catch (error) {
+        failed = true;
         const summary = safeErrorSummary(error);
         logger.error({ job: name, err: summary }, "Keeper job failed; next trigger will retry");
         try {
@@ -53,7 +55,11 @@ export function createScheduler(sql: OgeeDbClient["sql"], logger: Logger) {
         }
       } finally {
         delete state.running;
-        const delay = state.pending ? 0 : definition.everyMs + Math.floor(Math.random() * (definition.jitterMs ?? 0));
+        // An hourly job can start before the first indexer snapshot exists, or
+        // encounter a short RPC outage. Retry it within a minute rather than
+        // leaving sessions/corporate-action state stale for the full interval.
+        const nextInterval = failed ? Math.min(definition.everyMs, 60000) : definition.everyMs;
+        const delay = state.pending ? 0 : nextInterval + Math.floor(Math.random() * (definition.jitterMs ?? 0));
         state.pending = false;
         schedule(name, delay);
       }
