@@ -37,8 +37,8 @@ export function createScheduler(sql: OgeeDbClient["sql"], logger: Logger) {
       const started = new Date().toISOString();
       let failed = false;
       try {
-        const defaults = sql.json({ intervalMs: definition.everyMs });
-        await sql`insert into keeper_status (job, last_run, meta) values (${name}, ${started}, ${defaults})
+        const defaults = JSON.stringify({ intervalMs: definition.everyMs });
+        await sql`insert into keeper_status (job, last_run, meta) values (${name}, ${started}, ${defaults}::jsonb)
           on conflict (job) do update set last_run = excluded.last_run, meta = keeper_status.meta || excluded.meta`;
         const meta = JSON.stringify((await definition.run()) ?? {});
         await sql`update keeper_status set last_ok = now(), last_error = null,
