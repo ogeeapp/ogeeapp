@@ -8,6 +8,7 @@ contract MockStockToken is ERC20, IStockToken {
     event OraclePaused();
     event OracleUnpaused();
     bool public override oraclePaused;
+    bool public override paused;
     uint256 public override uiMultiplier = 1e18;
     uint256 public override newUIMultiplier = 1e18;
     uint256 public override effectiveAt;
@@ -18,6 +19,10 @@ contract MockStockToken is ERC20, IStockToken {
         oraclePaused = paused;
         if (paused) emit OraclePaused();
         else emit OracleUnpaused();
+    }
+
+    function setPaused(bool paused_) external {
+        paused = paused_;
     }
 
     function setMultipliers(uint256 current, uint256 pending, uint256 effectiveAt_) external {

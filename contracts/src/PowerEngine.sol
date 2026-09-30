@@ -38,6 +38,9 @@ contract PowerEngine is
     uint256 private constant CARRY_DAY = 1 days;
     uint256 private constant SEQUENCER_GRACE_PERIOD = 1 hours;
     uint256 private constant PAUSED_BAND_BPS = 300;
+    /// @dev Chain-independent paused-sell budget window. `block.number` on Arbitrum Orbit chains returns the
+    /// parent-chain block number, so a per-block cap would not mean what it says.
+    uint256 private constant PAUSED_SELL_WINDOW = 1 hours;
     uint256 private constant MAX_SPOT_WAD = type(uint128).max;
     uint128 private constant MIN_NORM_FACTOR = 1e12;
 
@@ -72,7 +75,6 @@ contract PowerEngine is
     MarketConfig[] private _configs;
     MarketState[] private _states;
     mapping(address token => uint8 idPlusOne) private _idPlusOne;
-    mapping(uint8 marketId => uint256 blockNumber) private _lastAccrualBlock;
     PowerTokenFactory private immutable _TOKEN_FACTORY;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -115,6 +117,10 @@ contract PowerEngine is
         if (_configs.length >= type(uint8).max) revert InvalidMarketConfig();
         if (address(config.token) != address(0)) revert InvalidMarketConfig();
         _validateMarketConfig(config);
+        // Vault hedge accounting (syncHedgeUnits, NAV) assumes one market per stock token.
+        for (uint256 i; i < _configs.length; ++i) {
+            if (address(_configs[i].stock) == address(config.stock)) revert InvalidMarketConfig();
+        }
         if (initialBaseCarryWad < config.baseCarryMinWad || initialBaseCarryWad > config.baseCarryMaxWad) {
             revert CarryOutOfBounds();
         }
@@ -140,7 +146,6 @@ contract PowerEngine is
         state.lastGoodIndex = uint128(oracle.indexWad);
         state.lastGoodAt = uint64(oracle.updatedAt);
         state.regime = _regime(id, oracle);
-        _lastAccrualBlock[id] = block.number;
         _refreshUtil(id);
 
         _emitMarketListed(id, token);
@@ -200,7 +205,9 @@ contract PowerEngine is
         int256 current = int256(state.baseCarryWad);
         int256 next = int256(wad);
         uint256 difference = uint256(next >= current ? next - current : current - next);
-        uint256 maxStep = uint256(current) * 2_500 / BPS;
+        // A zero base carry would otherwise allow no step at all; measure from the upper bound instead.
+        uint256 stepBase = current > 0 ? uint256(current) : uint256(int256(config.baseCarryMaxWad));
+        uint256 maxStep = stepBase * 2_500 / BPS;
         if (difference > maxStep) revert CarryChangeTooFast();
 
         state.baseCarryWad = wad;
@@ -235,8 +242,7 @@ contract PowerEngine is
     function accrueAll() external override {
         uint256 count = _configs.length;
         for (uint256 i; i < count; ++i) {
-            uint8 id = uint8(i);
-            if (_lastAccrualBlock[id] != block.number) _accrue(id);
+            _accrue(uint8(i));
         }
     }
 
@@ -566,12 +572,13 @@ contract PowerEngine is
     }
 
     function _consumePausedSellCap(uint8 id, uint256 grossUsdg) private {
+        // Legacy field names: `pausedSellBlock` stores the window index and the cap applies per PAUSED_SELL_WINDOW.
         MarketState storage state = _states[id];
-        uint64 currentBlock = uint64(block.number);
-        uint256 used = state.pausedSellBlock == currentBlock ? state.pausedSellUsed : 0;
+        uint64 currentWindow = uint64(block.timestamp / PAUSED_SELL_WINDOW);
+        uint256 used = state.pausedSellBlock == currentWindow ? state.pausedSellUsed : 0;
         uint256 cap = _configs[id].pausedSellCapPerBlockUsdg;
         if (grossUsdg > cap || used > cap - grossUsdg) revert PausedSellCapExceeded();
-        state.pausedSellBlock = currentBlock;
+        state.pausedSellBlock = currentWindow;
         state.pausedSellUsed = uint128(used + grossUsdg);
     }
 
@@ -622,9 +629,10 @@ contract PowerEngine is
     }
 
     function _accrue(uint8 id) private {
-        if (_lastAccrualBlock[id] == block.number) return;
-        MarketConfig storage config = _configs[id];
         MarketState storage state = _states[id];
+        // Timestamp dedupe: on Arbitrum Orbit `block.number` is the parent-chain block, spanning many L2 blocks.
+        if (state.lastAccrual == block.timestamp) return;
+        MarketConfig storage config = _configs[id];
         Regime previousRegime = state.regime;
         OracleData memory oracle = _readOracle(config);
         Regime regime = _regime(id, oracle);
@@ -639,7 +647,6 @@ contract PowerEngine is
             state.lastGoodAt = uint64(oracle.updatedAt);
         }
         state.regime = regime;
-        _lastAccrualBlock[id] = block.number;
 
         if (previousRegime != regime) emit RegimeChanged(id, previousRegime, regime);
         emit Accrued(id, state.normFactor, int64(carryWad), regime, _indexForRegime(id, regime));
@@ -738,6 +745,14 @@ contract PowerEngine is
         } catch {
             oracle.stockPaused = true;
         }
+        // A token-level pause freezes transfers, so the vault cannot hedge or raise cash from this stock.
+        if (!oracle.stockPaused) {
+            try config.stock.paused() returns (bool paused) {
+                oracle.stockPaused = paused;
+            } catch {
+                oracle.stockPaused = true;
+            }
+        }
         oracle.sequencerDown = _sequencerDown();
     }
 
@@ -776,7 +791,7 @@ contract PowerEngine is
                 || config.maxMarketExposureBps > BPS || config.feeBps > 100 || config.impactBps > 1_000
                 || config.openSpreadBps > config.openBandBps || config.openBandBps > 1_000
                 || config.offHoursSpreadBps > config.offHoursBandBps || config.offHoursBandBps > 1_000
-                || config.pausedSpreadBps > 1_000 || config.minTradeUsdg == 0
+                || config.pausedSpreadBps > PAUSED_BAND_BPS || config.minTradeUsdg == 0
                 || config.maxTradeUsdg < config.minTradeUsdg || config.pausedSellCapPerBlockUsdg == 0
                 || config.maxAgeOpen == 0 || config.maxAgeOffHours == 0 || config.minCarryWad < 0
                 || config.offHoursCarryWad < 0 || config.skewCarryWad < 0 || config.maxCarryWad < config.minCarryWad

@@ -337,6 +337,58 @@ contract PowerEngineTest is PowerEngineFixture {
         engine.sell(0, 7e17, 0, ALICE, block.timestamp + 1 days);
     }
 
+    function testPausedSellCapIsTimeWindowedNotBlockWindowed() public {
+        _buy(25 * USDG);
+        stock.setOraclePaused(true);
+        MarketConfig memory config = _config();
+        config.pausedSellCapPerBlockUsdg = uint128(10 * USDG);
+        _setConfig(config);
+
+        vm.prank(ALICE);
+        engine.sell(0, 7e17, 0, ALICE, block.timestamp + 1 days);
+        vm.roll(block.number + 100);
+        vm.warp(block.timestamp + 10 minutes);
+        vm.expectRevert(IPowerEngine.PausedSellCapExceeded.selector);
+        vm.prank(ALICE);
+        engine.sell(0, 7e17, 0, ALICE, block.timestamp + 1 days);
+
+        vm.warp(block.timestamp + 1 hours);
+        vm.prank(ALICE);
+        engine.sell(0, 7e17, 0, ALICE, block.timestamp + 1 days);
+    }
+
+    function testStockTokenPausePausesRegimeAndBlocksBuys() public {
+        stock.setPaused(true);
+        assertEq(uint8(engine.currentRegime(0)), uint8(Regime.PAUSED));
+        vm.expectRevert(IPowerEngine.RegimePaused.selector);
+        _buy(USDG);
+    }
+
+    function testListingRejectsDuplicateStockAndOversizedPausedSpread() public {
+        MarketConfig memory config = _config();
+        config.token = PowerToken(address(0));
+        vm.expectRevert(IPowerEngine.InvalidMarketConfig.selector);
+        engine.listMarket(config, "Dup", "DUP", int64(int256(BASE_CARRY)));
+
+        config = _config();
+        config.pausedSpreadBps = 301;
+        vm.expectRevert(IPowerEngine.InvalidMarketConfig.selector);
+        engine.setMarketConfig(0, config);
+    }
+
+    function testBaseCarryCanLeaveZero() public {
+        MarketConfig memory config = _config();
+        config.token = PowerToken(address(0));
+        config.stock = new MockStockToken();
+        config.baseCarryMinWad = 0;
+        uint8 id = engine.listMarket(config, "Zero", "ZERO", 0);
+
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(KEEPER);
+        engine.setBaseCarry(id, int64(1e15)); // <= 25% of baseCarryMaxWad (5e15)
+        assertEq(engine.getState(id).baseCarryWad, int64(1e15));
+    }
+
     function testOnlySellingHolderCanBurnThroughEngine() public {
         uint256 received = _buy(5 * USDG);
         uint256 holderBalance = token.balanceOf(ALICE);

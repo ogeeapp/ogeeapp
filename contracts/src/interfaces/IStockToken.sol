@@ -8,6 +8,8 @@ interface IStockToken is IERC20Metadata {
 
     function oraclePaused() external view returns (bool);
 
+    function paused() external view returns (bool);
+
     function uiMultiplier() external view returns (uint256);
 
     function newUIMultiplier() external view returns (uint256);
