@@ -33,6 +33,7 @@ contract CrabVault is
     uint256 private constant BPS = 10_000;
     uint256 private constant USDG_TO_WAD = 1e12;
     uint256 private constant STOCK_VALUE_DENOMINATOR = 1e30;
+    uint256 private constant MAX_LOCK_SECONDS = 30 days;
 
     bytes32 public constant override KEEPER_ROLE = Roles.KEEPER_ROLE;
 
@@ -127,8 +128,8 @@ contract CrabVault is
         uint128 maxTotalDeposits_
     ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         if (
-            cashBufferBps_ > 5_000 || hedgeRatioBps_ > 15_000 || rebalanceThresholdBps_ > BPS
-                || maxHedgeSlippageBps_ > 500
+            lockSeconds_ > MAX_LOCK_SECONDS || cashBufferBps_ > 5_000 || hedgeRatioBps_ > 15_000
+                || rebalanceThresholdBps_ > BPS || maxHedgeSlippageBps_ > 500
         ) revert InvalidParams();
 
         lockSeconds = lockSeconds_;
@@ -354,12 +355,14 @@ contract CrabVault is
         emit Withdraw(caller, receiver, owner, assets, shares);
     }
 
-    /// @dev A transfer carries the sender's remaining lock forward to the recipient.
+    /// @dev A transfer carries the sender's remaining lock forward to the recipient. Locked shares may only move to
+    /// an empty account, so a locked holder cannot extend an existing holder's lock by sending dust.
     function _update(address from, address to, uint256 value) internal override(ERC20Upgradeable) {
-        super._update(from, to, value);
-        if (from == address(0) || to == address(0) || from == to || value == 0) return;
+        bool propagate = from != address(0) && to != address(0) && from != to && value != 0;
+        uint256 senderUnlock = propagate ? unlockTime(from) : 0;
+        if (senderUnlock > block.timestamp && balanceOf(to) != 0) revert WithdrawalLocked();
 
-        uint256 senderUnlock = unlockTime(from);
+        super._update(from, to, value);
         if (senderUnlock <= block.timestamp) return;
         uint256 receiverUnlock = unlockTime(to);
         if (senderUnlock > receiverUnlock) lastDeposit[to] = senderUnlock - lockSeconds;
@@ -450,8 +453,10 @@ contract CrabVault is
             IHedgeAdapter adapter = _hedgeAdapters[id];
             if (address(adapter) == address(0)) continue;
             uint256 minOut = _minUsdgOut(unitsToSell, price);
-            (uint256 sold, uint256 received) =
-                _swap(id, adapter, address(config.stock), address(usdg), _poolFees[id], unitsToSell, minOut);
+            // One failing route (paused stock, drained pool) must not block payments other hedges can cover.
+            (bool ok, uint256 sold, uint256 received) =
+                _trySwap(adapter, address(config.stock), address(usdg), _poolFees[id], unitsToSell, minOut);
+            if (!ok) continue;
             if (sold > _hedgeUnits[id]) revert InsufficientLiquidity();
             _hedgeUnits[id] -= sold;
             emit CashRaised(id, sold, received);
@@ -477,7 +482,42 @@ contract CrabVault is
         input.forceApprove(address(adapter), amountIn);
         uint256 reportedOut = adapter.swapExactIn(tokenIn, tokenOut, fee, amountIn, minOut, address(this));
         input.forceApprove(address(adapter), 0);
+        (actualIn, actualOut) = _checkSwap(input, output, inputBefore, outputBefore, amountIn, minOut, reportedOut);
+    }
 
+    function _trySwap(
+        IHedgeAdapter adapter,
+        address tokenIn,
+        address tokenOut,
+        uint24 fee,
+        uint256 amountIn,
+        uint256 minOut
+    ) private returns (bool ok, uint256 actualIn, uint256 actualOut) {
+        IERC20 input = IERC20(tokenIn);
+        IERC20 output = IERC20(tokenOut);
+        uint256 inputBefore = input.balanceOf(address(this));
+        uint256 outputBefore = output.balanceOf(address(this));
+
+        input.forceApprove(address(adapter), amountIn);
+        try adapter.swapExactIn(tokenIn, tokenOut, fee, amountIn, minOut, address(this)) returns (uint256 reportedOut) {
+            input.forceApprove(address(adapter), 0);
+            (actualIn, actualOut) =
+                _checkSwap(input, output, inputBefore, outputBefore, amountIn, minOut, reportedOut);
+            ok = true;
+        } catch {
+            input.forceApprove(address(adapter), 0);
+        }
+    }
+
+    function _checkSwap(
+        IERC20 input,
+        IERC20 output,
+        uint256 inputBefore,
+        uint256 outputBefore,
+        uint256 amountIn,
+        uint256 minOut,
+        uint256 reportedOut
+    ) private view returns (uint256 actualIn, uint256 actualOut) {
         uint256 inputAfter = input.balanceOf(address(this));
         uint256 outputAfter = output.balanceOf(address(this));
         if (inputAfter > inputBefore || outputAfter < outputBefore) revert InsufficientLiquidity();

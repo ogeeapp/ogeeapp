@@ -111,6 +111,50 @@ contract CrabVaultTest is Test {
         vault.redeem(amount, bob, bob);
     }
 
+    function testLockedSharesCannotDustAnExistingHolder() public {
+        _deposit(bob, 10 * USDG);
+        vm.warp(vault.unlockTime(bob));
+        uint256 bobUnlock = vault.unlockTime(bob);
+        _deposit(alice, 10 * USDG);
+
+        vm.prank(alice);
+        vm.expectRevert(ICrabVault.WithdrawalLocked.selector);
+        vault.transfer(bob, 1);
+        assertEq(vault.unlockTime(bob), bobUnlock);
+        assertGt(vault.maxRedeem(bob), 0);
+
+        vm.warp(vault.unlockTime(alice));
+        vm.prank(alice);
+        vault.transfer(bob, 1);
+    }
+
+    function testLockDurationIsBounded() public {
+        vm.expectRevert(ICrabVault.InvalidParams.selector);
+        vault.setParams(30 days + 1, 1_000, 10_000, 1_000, 100, uint128(2 * USDG), uint128(1_000 * USDG));
+    }
+
+    function testPaySkipsFailingHedgeRouteAndUsesAnotherMarket() public {
+        MockStockToken stock2 = new MockStockToken();
+        engine.addMarket(stock2, 1e18);
+        vault.setHedgeRoute(1, adapter, POOL_FEE);
+        router.setRate(address(stock2), address(usdg), POOL_FEE, 1e6);
+        usdg.mint(address(router), 10_000 * USDG);
+        stock.mint(address(vault), 10e18);
+        stock2.mint(address(vault), 10e18);
+        vault.syncHedgeUnits(0);
+        vault.syncHedgeUnits(1);
+        router.setRate(address(stock), address(usdg), POOL_FEE, 1e5); // market 0 swap now misses minOut
+
+        address recipient = makeAddr("recipient");
+        vm.prank(address(engine));
+        vault.pay(recipient, 5 * USDG, 0);
+
+        assertEq(usdg.balanceOf(recipient), 5 * USDG);
+        assertEq(vault.hedgeUnits(0), 10e18);
+        assertLt(vault.hedgeUnits(1), 10e18);
+        assertEq(stock.allowance(address(vault), address(adapter)), 0);
+    }
+
     function testWithdrawAndRedeemStayInsideLiabilityReserve() public {
         _deposit(alice, 100 * USDG);
         engine.setMarket(0, Regime.OPEN, 1e18, true, 1e18, 10e18, 0);
