@@ -16,8 +16,9 @@ export function createRiskJob(context: KeeperContext) {
       nextBalanceCheck = Date.now() + 30 * 60_000;
     }
     if (balance < 2_000_000_000_000_000n) warnings.push("Keeper ETH balance is below 0.002");
-    const navs = await context.sql<{ current: string | null; peak: string | null }[]>`
+    const navs = await context.sql<{ current: string | null; peak: string | null; nav: string | null }[]>`
       select (select nav_per_share from vault_ticks order by ts desc limit 1) as current,
+        (select nav from vault_ticks order by ts desc limit 1) as nav,
         max(nav_per_share) as peak from vault_ticks where ts >= ${new Date(now.getTime() - 30 * 86400000).toISOString()}`;
     const current = Number(navs[0]?.current ?? 0);
     const peak = Number(navs[0]?.peak ?? 0);
@@ -34,14 +35,16 @@ export function createRiskJob(context: KeeperContext) {
         haltSent = !result.simulated;
       }
     } else haltSent = false;
-    const ticks = await context.sql<{ market_id: number; regime: number; oracle_updated_at: Date | string }[]>`
-      select distinct on (market_id) market_id, regime, oracle_updated_at from ticks order by market_id, ts desc`;
+    const ticks = await context.sql<{ market_id: number; regime: number; oracle_updated_at: Date | string; liability: string }[]>`
+      select distinct on (market_id) market_id, regime, oracle_updated_at, liability from ticks order by market_id, ts desc`;
     for (const tick of ticks) {
       const market = metadata.marketsById?.[String(tick.market_id)];
       if (!market) continue;
       const age = (now.getTime() - new Date(tick.oracle_updated_at).getTime()) / 1000;
       if (tick.regime === 0 && age > Number(market.config.maxAgeOpen) * 0.8) warnings.push(`${market.symbol} oracle is approaching its maximum age`);
-      if (market.state.lastUtilBps > 9000) warnings.push(`${market.symbol} utilization exceeds 90%`);
+      const capacity = Number(navs[0]?.nav ?? 0) * Number(market.config.maxMarketExposureBps) / 10000;
+      const liability = Number(tick.liability);
+      if (liability > 0 && (capacity <= 0 || liability / capacity > 0.9)) warnings.push(`${market.symbol} utilization exceeds 90%`);
     }
     const sessions = await context.sql<{ meta: Record<string, unknown> }[]>`select meta from keeper_status where job = 'sessions'`;
     if (Number(sessions[0]?.meta.horizon ?? 0) - now.getTime() / 1000 < 3 * 86400) warnings.push("Market sessions expire within three days");
