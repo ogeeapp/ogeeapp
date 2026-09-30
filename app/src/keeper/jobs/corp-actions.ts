@@ -52,7 +52,7 @@ async function upsert(context: KeeperContext, action: Action): Promise<void> {
   await context.sql`insert into corp_actions (id,symbol,kind,status,process_date,effective_at,old_mult,new_mult,details,source)
     values (${action.id},${action.symbol},${action.kind},${action.status},${action.processDate},${action.effectiveAt?.toISOString() ?? null},
       ${action.oldMult},${action.newMult},${JSON.stringify(action.details)}::jsonb,${action.source})
-    on conflict (id) do update set status=excluded.status,process_date=excluded.process_date,
+    on conflict (id) do update set symbol=excluded.symbol,status=excluded.status,process_date=excluded.process_date,
       effective_at=coalesce(excluded.effective_at,corp_actions.effective_at),old_mult=coalesce(excluded.old_mult,corp_actions.old_mult),
       new_mult=coalesce(excluded.new_mult,corp_actions.new_mult),details=excluded.details,updated_at=now()`;
 }
