@@ -113,7 +113,7 @@ export async function listMarkets(deps: ApiDependencies, requestedNow?: Date): P
       coalesce(vol.volume_24h, 0)::text as volume_24h
     from markets m
     left join lateral (
-      select * from ticks where market_id = m.id order by ts desc limit 1
+      select * from ticks where market_id = m.id and ts <= ${nowIso}::timestamptz order by ts desc limit 1
     ) t on true
     left join lateral (
       select price from ticks where market_id = m.id and ts <= ${nowIso}::timestamptz - interval '24 hours'
@@ -134,6 +134,7 @@ export async function listMarkets(deps: ApiDependencies, requestedNow?: Date): P
         select market_id, time_bucket(interval '30 minutes', ts) as bucket, price,
           row_number() over (partition by market_id, time_bucket(interval '30 minutes', ts) order by ts desc) as rn
         from ticks where ts >= ${nowIso}::timestamptz - interval '24 hours'
+          and ts <= ${nowIso}::timestamptz
       ) spark where rn = 1 order by market_id, bucket
     `,
     deps.sql`
@@ -206,7 +207,7 @@ export async function listMarkets(deps: ApiDependencies, requestedNow?: Date): P
       ? Number(publicConfig.openBandBps)
       : regime === "off_hours" ? Number(publicConfig.offHoursBandBps) : 300;
     const configuredSpark = sparkByMarket.get(marketId) ?? [];
-    const sparkline = fillSparkline(configuredSpark, now, decimal(priceNow));
+    const sparkline = fillSparkline(configuredSpark, now);
     const corp = corpBySymbol.get(row.symbol.toUpperCase());
     const view: MarketView = {
       id: marketId,
@@ -252,18 +253,22 @@ export async function listMarkets(deps: ApiDependencies, requestedNow?: Date): P
   });
 }
 
-function fillSparkline(points: { t: number; p: string }[], now: Date, fallbackPrice: string): { t: number; p: string }[] {
-  if (points.length === 0 && fallbackPrice === "0") return [];
+function fillSparkline(points: { t: number; p: string }[], now: Date): { t: number; p: string }[] {
+  if (points.length === 0) return [];
   const stepSeconds = 30 * 60;
   const end = Math.floor(now.getTime() / (stepSeconds * 1000)) * stepSeconds;
   const first = end - 47 * stepSeconds;
   const values = new Map(points.map((point) => [point.t, point.p]));
-  let last = points[0]?.p ?? fallbackPrice;
+  let last: string | undefined;
+  for (const point of points) {
+    if (point.t > first) break;
+    last = point.p;
+  }
   const result: { t: number; p: string }[] = [];
   for (let t = first; t <= end; t += stepSeconds) {
     const exact = values.get(t);
     if (exact !== undefined) last = exact;
-    result.push({ t, p: last });
+    if (last !== undefined) result.push({ t, p: last });
   }
   return result;
 }
@@ -297,23 +302,51 @@ export async function marketCandles(
   const marketId = numberValue(market.id);
 
   const candlePlan = {
-    "1H": { view: "candles_1m", interval: "1 minute", seconds: 60, slots: 60, lookback: "1 hour" },
-    "4H": { view: "candles_1m", interval: "5 minutes", seconds: 5 * 60, slots: 48, lookback: "4 hours" },
-    "1D": { view: "candles_1m", interval: "15 minutes", seconds: 15 * 60, slots: 96, lookback: "1 day" },
-    "1W": { view: "candles_1h", interval: "1 hour", seconds: 60 * 60, slots: 168, lookback: "7 days" },
-    "1M": { view: "candles_1h", interval: "4 hours", seconds: 4 * 60 * 60, slots: 180, lookback: "30 days" },
-    ALL: { view: "candles_1d", interval: "1 day", seconds: 24 * 60 * 60, slots: undefined, lookback: undefined },
+    "1H": { view: "candles_1m", baseInterval: "1 minute", interval: "1 minute", seconds: 60, slots: 60, lookback: "1 hour" },
+    "4H": { view: "candles_1m", baseInterval: "1 minute", interval: "5 minutes", seconds: 5 * 60, slots: 48, lookback: "4 hours" },
+    "1D": { view: "candles_1m", baseInterval: "1 minute", interval: "15 minutes", seconds: 15 * 60, slots: 96, lookback: "1 day" },
+    "1W": { view: "candles_1h", baseInterval: "1 hour", interval: "1 hour", seconds: 60 * 60, slots: 168, lookback: "7 days" },
+    "1M": { view: "candles_1h", baseInterval: "1 hour", interval: "4 hours", seconds: 4 * 60 * 60, slots: 180, lookback: "30 days" },
+    ALL: { view: "candles_1d", baseInterval: "1 day", interval: "1 day", seconds: 24 * 60 * 60, slots: undefined, lookback: undefined },
   } as const;
   const plan = candlePlan[range];
   const prefix = series === "price" ? "price" : "index";
-  const bound = plan.lookback ? `and bucket >= $2::timestamptz - interval '${plan.lookback}'` : "";
+  const sourceColumn = series === "price" ? "price" : '"index"';
+  const baseBound = plan.lookback
+    ? `and candles.bucket >= $2::timestamptz - interval '${plan.lookback}' - interval '${plan.interval}'`
+    : "";
+  const rawBound = plan.lookback
+    ? `and ticks.ts >= $2::timestamptz - interval '${plan.lookback}' - interval '${plan.interval}'`
+    : "";
+  const resultBound = plan.lookback
+    ? `where bucket >= time_bucket(interval '${plan.interval}', $2::timestamptz - interval '${plan.lookback}')
+        and bucket <= $2::timestamptz`
+    : "where bucket <= $2::timestamptz";
   const rowsResult = await deps.sql.unsafe(
-    `select floor(extract(epoch from time_bucket(interval '${plan.interval}', bucket)))::bigint as t,
-       first(open_${prefix}, bucket)::text as o, max(high_${prefix})::text as h,
-       min(low_${prefix})::text as l, last(close_${prefix}, bucket)::text as c
-     from ${plan.view} where market_id = $1 ${bound}
-     group by time_bucket(interval '${plan.interval}', bucket) order by 1`,
-    plan.lookback ? [marketId, now.toISOString()] : [marketId],
+     `with cutoff as (
+       select time_bucket(interval '${plan.baseInterval}', $2::timestamptz - interval '3 days') as bucket
+     ), base as (
+       select candles.bucket, candles.open_${prefix} as o, candles.high_${prefix} as h,
+         candles.low_${prefix} as l, candles.close_${prefix} as c
+       from ${plan.view} candles cross join cutoff
+       where candles.market_id = $1 and candles.bucket < cutoff.bucket
+         and candles.bucket <= $2::timestamptz ${baseBound}
+       union all
+       select time_bucket(interval '${plan.baseInterval}', ts) as bucket,
+         first(${sourceColumn}, ts) as o, max(${sourceColumn}) as h,
+         min(${sourceColumn}) as l, last(${sourceColumn}, ts) as c
+       from ticks cross join cutoff
+       where market_id = $1 and ts >= cutoff.bucket and ts <= $2::timestamptz ${rawBound}
+       group by time_bucket(interval '${plan.baseInterval}', ts)
+     ), rolled as (
+       select time_bucket(interval '${plan.interval}', bucket) as bucket,
+         first(o, bucket) as o, max(h) as h, min(l) as l, last(c, bucket) as c
+       from base group by time_bucket(interval '${plan.interval}', bucket)
+     )
+     select floor(extract(epoch from bucket))::bigint as t,
+       o::text as o, h::text as h, l::text as l, c::text as c
+     from rolled ${resultBound} order by bucket`,
+    [marketId, now.toISOString()],
   );
   const rows = asRows<DbRow>(rowsResult).map((row) => ({
     t: numberValue(row.t), o: textValue(row.o), h: textValue(row.h), l: textValue(row.l), c: textValue(row.c),
@@ -354,14 +387,30 @@ export async function marketCarry(
          select time_bucket(interval '1 hour', ts) as bucket, carry_wad, regime,
            row_number() over (partition by time_bucket(interval '1 hour', ts) order by ts desc) as rn
          from ticks where market_id = $1 and ts >= $2::timestamptz - interval '${period}'
+           and ts <= $2::timestamptz
        ) hourly where rn = 1 order by bucket`,
       [marketId, now.toISOString()],
     )
-    : await deps.sql`
-      select floor(extract(epoch from time_bucket(interval '1 day', ts)))::bigint as t,
-        last(carry_wad, ts)::text as carry_wad, last(regime, ts)::int as regime
-      from ticks where market_id = ${marketId} group by time_bucket(interval '1 day', ts) order by 1
-    `;
+    : await deps.sql.unsafe(
+      `with cutoff as (
+         select time_bucket(interval '1 day', $2::timestamptz - interval '30 days') as bucket
+       ), points as (
+         select history.bucket, history.carry_wad, history.regime
+         from market_carry_1d history cross join cutoff
+         where history.market_id = $1 and history.bucket < cutoff.bucket
+           and history.bucket <= $2::timestamptz
+         union all
+         select time_bucket(interval '1 day', ts) as bucket,
+           last(carry_wad, ts) as carry_wad, last(regime, ts) as regime
+         from ticks cross join cutoff
+         where market_id = $1 and ts >= cutoff.bucket and ts <= $2::timestamptz
+         group by time_bucket(interval '1 day', ts)
+       )
+       select floor(extract(epoch from bucket))::bigint as t,
+         carry_wad::text as carry_wad, regime::int as regime
+       from points order by bucket`,
+      [marketId, now.toISOString()],
+    );
   const points = asRows<DbRow>(rowsResult).map((row) => ({
     t: numberValue(row.t),
     dailyCarryPct: fractionPercent(fixed(row.carry_wad as string | undefined)),
