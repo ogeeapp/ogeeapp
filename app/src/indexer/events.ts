@@ -62,7 +62,8 @@ function decodedEvent(
     });
     return {
       eventName: String(decoded.eventName),
-      args: decoded.args as unknown as Record<string, unknown>,
+      // viem returns undefined for zero-argument stock pause events.
+      args: (decoded.args ?? {}) as unknown as Record<string, unknown>,
     };
   } catch {
     return undefined;
