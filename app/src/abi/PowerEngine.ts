@@ -1415,6 +1415,41 @@ export const PowerEngineAbi = [
   },
   {
     "type": "function",
+    "name": "valuation",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "totalLiabilityWad",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "marks",
+        "type": "tuple[]",
+        "internalType": "struct ValuationMark[]",
+        "components": [
+          {
+            "name": "spot",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "liability",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "regime",
+            "type": "uint8",
+            "internalType": "enum Regime"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "vault",
     "inputs": [],
     "outputs": [

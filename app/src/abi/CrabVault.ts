@@ -204,7 +204,7 @@ export const CrabVaultAbi = [
     ],
     "outputs": [
       {
-        "name": "",
+        "name": "shares",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -523,7 +523,7 @@ export const CrabVaultAbi = [
     ],
     "outputs": [
       {
-        "name": "",
+        "name": "assets",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -539,6 +539,79 @@ export const CrabVaultAbi = [
         "name": "",
         "type": "string",
         "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "navBand",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "navWad",
+        "type": "int256",
+        "internalType": "int256"
+      },
+      {
+        "name": "lowWad",
+        "type": "int256",
+        "internalType": "int256"
+      },
+      {
+        "name": "highWad",
+        "type": "int256",
+        "internalType": "int256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "navFor",
+    "inputs": [
+      {
+        "name": "liabilityWad",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "spots",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "int256",
+        "internalType": "int256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "navGuardClosedBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "navGuardOpenBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
       }
     ],
     "stateMutability": "view"
@@ -748,7 +821,7 @@ export const CrabVaultAbi = [
     ],
     "outputs": [
       {
-        "name": "",
+        "name": "assets",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -851,6 +924,24 @@ export const CrabVaultAbi = [
         "name": "poolFee",
         "type": "uint24",
         "internalType": "uint24"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setNavGuard",
+    "inputs": [
+      {
+        "name": "openBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "closedBps",
+        "type": "uint16",
+        "internalType": "uint16"
       }
     ],
     "outputs": [],
@@ -1108,7 +1199,7 @@ export const CrabVaultAbi = [
     ],
     "outputs": [
       {
-        "name": "",
+        "name": "shares",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1305,6 +1396,25 @@ export const CrabVaultAbi = [
         "type": "uint64",
         "indexed": false,
         "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "NavGuardUpdated",
+    "inputs": [
+      {
+        "name": "openBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      },
+      {
+        "name": "closedBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
       }
     ],
     "anonymous": false
