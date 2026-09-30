@@ -4,6 +4,7 @@ import type { ApiDependencies } from "./types";
 import { openApiDocument } from "./openapi";
 import { registerConfigRoutes } from "./routes/config";
 import { registerHealthRoutes } from "./routes/health";
+import { registerMarketRoutes } from "./routes/markets";
 import { safeErrorSummary } from "../log";
 
 export function createApiApp(deps: ApiDependencies) {
@@ -37,6 +38,7 @@ export function createApiApp(deps: ApiDependencies) {
 
   registerHealthRoutes(app, deps);
   registerConfigRoutes(app, deps);
+  registerMarketRoutes(app, deps);
 
   app.get("/v1/openapi.json", (context) => {
     try {
