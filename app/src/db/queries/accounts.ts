@@ -1,0 +1,241 @@
+import { fixed, decimal, divide, multiply, projectNormFactor, priceAtNormFactor } from "../../lib/fixed";
+import { apiNow } from "../../api/clock";
+import type { ApiDependencies, DbRow } from "../../api/types";
+import { asRows, dateValue, numberValue } from "../../api/types";
+
+interface PositionRow extends DbRow {
+  id: number | string;
+  symbol: string;
+  token: string;
+  balance: string;
+}
+
+interface PortfolioEvent extends DbRow {
+  event_kind: "trade" | "transfer";
+  market_id: number | string;
+  side: string | null;
+  from_addr: string;
+  to_addr: string;
+  quantity: string;
+  usdg: string;
+  price: string;
+  block: string | number | bigint;
+  log_index: number | string;
+}
+
+interface CostState {
+  quantity: bigint;
+  cost: bigint;
+  realized: bigint;
+}
+
+export async function noteUserActivity(deps: ApiDependencies, address: string): Promise<void> {
+  void address;
+  await deps.sql`
+    insert into keeper_status (job, meta)
+    values ('api', jsonb_build_object('lastUserActivity', now()::text))
+    on conflict (job) do update
+      set meta = jsonb_set(keeper_status.meta, '{lastUserActivity}', to_jsonb(now()::text), true)
+      where nullif(keeper_status.meta->>'lastUserActivity', '') is null
+        or (keeper_status.meta->>'lastUserActivity')::timestamptz < now() - interval '10 seconds'
+  `;
+}
+
+export async function accountPortfolio(deps: ApiDependencies, address: string) {
+  await noteUserActivity(deps, address);
+  const positionsResult = await deps.sql`
+    select m.id, m.symbol, m.token, b.balance::text
+    from balances b join markets m on lower(m.token) = lower(b.token)
+    where lower(b.account) = ${address} and b.balance > 0 order by m.id
+  `;
+  const positions = asRows<PositionRow>(positionsResult);
+  const [marketResult, eventResult, crabResult, vaultResult, accountStateResult] = await Promise.all([
+    deps.sql`
+      select m.id, t.ts, t.norm_factor, t.price, t.carry_wad
+      from markets m left join lateral (select * from ticks where market_id = m.id order by ts desc limit 1) t on true
+      order by m.id
+    `,
+    deps.sql`
+      select 'trade'::text as event_kind, market_id, side, account as from_addr, recipient as to_addr,
+        tokens::text as quantity, usdg::text, price::text, block, log_index
+      from trades where lower(account) = ${address} or lower(recipient) = ${address}
+      union all
+      select 'transfer'::text as event_kind, market_id, null::text as side, from_addr, to_addr,
+        amount::text as quantity, '0'::text as usdg,
+        coalesce((select price from ticks where ticks.market_id = transfers.market_id and ticks.block <= transfers.block order by ticks.block desc, ticks.ts desc limit 1), 0)::text as price,
+        block, log_index
+      from transfers where market_id is not null and (lower(from_addr) = ${address} or lower(to_addr) = ${address})
+      order by block, log_index
+    `,
+    deps.sql`select balance::text from balances where lower(account) = ${address} and lower(token) = ${deps.deployment.contracts.vault} limit 1`,
+    deps.sql`select nav_per_share::text from vault_ticks order by ts desc limit 1`,
+    deps.sql`select is_depositor, unlock_time from vault_account_state where lower(account) = ${address} limit 1`,
+  ]);
+  const marketRows = asRows<DbRow>(marketResult);
+  const marketById = new Map(marketRows.map((row) => [numberValue(row.id), row]));
+  const costs = new Map<number, CostState>();
+  for (const event of asRows<PortfolioEvent>(eventResult)) {
+    const marketId = numberValue(event.market_id);
+    const state = costs.get(marketId) ?? { quantity: 0n, cost: 0n, realized: 0n };
+    const quantity = fixed(event.quantity);
+    if (event.event_kind === "trade" && event.side === "buy" && event.to_addr.toLowerCase() === address) {
+      state.quantity += quantity;
+      state.cost += event.from_addr.toLowerCase() === address ? fixed(event.usdg) : multiply(quantity, fixed(event.price));
+    } else if (event.event_kind === "trade" && event.side === "sell" && event.from_addr.toLowerCase() === address) {
+      state.realized += fixed(event.usdg) - removeAtAverageCost(state, quantity);
+    } else if (event.event_kind === "transfer" && event.from_addr.toLowerCase() !== address && event.to_addr.toLowerCase() === address) {
+      state.quantity += quantity;
+      state.cost += multiply(quantity, fixed(event.price));
+    } else if (event.event_kind === "transfer" && event.from_addr.toLowerCase() === address && event.to_addr.toLowerCase() !== address) {
+      removeAtAverageCost(state, quantity);
+    }
+    costs.set(marketId, state);
+  }
+
+  const now = await apiNow(deps);
+  let powerValue = 0n;
+  let unrealizedTotal = 0n;
+  const realizedTotal = [...costs.values()].reduce((total, state) => total + state.realized, 0n);
+  const responsePositions = positions.map((position) => {
+    const marketId = numberValue(position.id);
+    const rawMarket = marketById.get(marketId);
+    const state = costs.get(marketId) ?? { quantity: 0n, cost: 0n, realized: 0n };
+    const balance = fixed(position.balance);
+    const tickTs = dateValue(rawMarket?.ts);
+    const norm = rawMarket?.norm_factor as string | undefined;
+    const normNow = projectNormFactor(norm ?? "0", rawMarket?.carry_wad as string | undefined ?? "0",
+      tickTs ? (now.getTime() - tickTs.getTime()) / 1000 : 0);
+    const price = priceAtNormFactor(rawMarket?.price as string | undefined ?? "0", norm ?? "0", normNow);
+    const value = multiply(balance, price);
+    const avgCost = state.quantity > 0n ? divide(state.cost, state.quantity) : price;
+    const costBasis = multiply(balance, avgCost);
+    const unrealizedPnl = value - costBasis;
+    powerValue += value;
+    unrealizedTotal += unrealizedPnl;
+    return {
+      symbol: position.symbol,
+      balance: decimal(balance),
+      price: decimal(price),
+      value: decimal(value),
+      avgCost: decimal(avgCost),
+      costBasis: decimal(costBasis),
+      unrealizedPnl: decimal(unrealizedPnl),
+      realizedPnl: decimal(state.realized),
+    };
+  });
+  const crabShares = fixed(asRows<DbRow>(crabResult)[0]?.balance as string | undefined);
+  const navPerShare = fixed(asRows<DbRow>(vaultResult)[0]?.nav_per_share as string | undefined);
+  const accountState = asRows<DbRow>(accountStateResult)[0];
+  return {
+    positions: responsePositions,
+    crab: {
+      shares: decimal(crabShares),
+      value: decimal(multiply(crabShares, navPerShare)),
+      unlockTime: dateValue(accountState?.unlock_time)?.toISOString() ?? null,
+      isDepositor: accountState?.is_depositor === true,
+    },
+    totals: { powerValue: decimal(powerValue), unrealizedPnl: decimal(unrealizedTotal), realizedPnl: decimal(realizedTotal) },
+  };
+}
+
+function removeAtAverageCost(state: CostState, requested: bigint): bigint {
+  if (state.quantity <= 0n || requested <= 0n) return 0n;
+  const quantity = requested < state.quantity ? requested : state.quantity;
+  const cost = quantity === state.quantity ? state.cost : (state.cost * quantity) / state.quantity;
+  state.quantity -= quantity;
+  state.cost -= cost;
+  return cost;
+}
+
+interface ActivityRow extends DbRow {
+  kind: "buy" | "sell" | "deposit" | "withdraw" | "transfer_in" | "transfer_out";
+  symbol: string;
+  usdg: string | null;
+  tokens: string | null;
+  price: string | null;
+  ts: Date | string;
+  tx_hash: string;
+  log_index: number | string;
+}
+
+interface ActivityCursor { ts: string; txHash: string; logIndex: number }
+
+function decodeCursor(cursor: string | undefined): ActivityCursor | null {
+  if (!cursor) return null;
+  try {
+    const raw = Buffer.from(cursor, "base64url").toString("utf8");
+    const [ts, txHash, logIndex] = raw.split("|");
+    if (!ts || !txHash || !logIndex || !/^0x[0-9a-f]{64}$/i.test(txHash) || !/^\d+$/.test(logIndex) || !dateValue(ts)) return null;
+    return { ts, txHash, logIndex: Number(logIndex) };
+  } catch {
+    return null;
+  }
+}
+
+function encodeCursor(row: ActivityRow): string {
+  return Buffer.from(`${dateValue(row.ts)?.toISOString() ?? String(row.ts)}|${row.tx_hash}|${row.log_index}`, "utf8").toString("base64url");
+}
+
+export async function accountActivity(
+  deps: ApiDependencies,
+  address: string,
+  type: "all" | "trades" | "vault",
+  cursorValue: string | undefined,
+  limit: number,
+) {
+  await noteUserActivity(deps, address);
+  const cursor = decodeCursor(cursorValue);
+  if (cursorValue && !cursor) throw Object.assign(new Error("Invalid activity cursor"), { status: 400, apiError: "BAD_REQUEST" });
+  const params: Array<string | number> = [address, type];
+  let cursorClause = "";
+  if (cursor) {
+    params.push(cursor.ts, cursor.txHash, cursor.logIndex);
+    cursorClause = "and (activity.ts, activity.tx_hash, activity.log_index) < ($3::timestamptz, $4::text, $5::int)";
+  }
+  params.push(limit + 1);
+  const limitPlaceholder = `$${params.length}`;
+  const query = `with activity as (
+    select case when t.side = 'buy' then 'buy' else 'sell' end::text as kind,
+      m.symbol, t.usdg::text as usdg, t.tokens::text as tokens, t.price::text as price,
+      t.ts, t.tx_hash, t.log_index
+    from trades t join markets m on m.id = t.market_id
+    where lower(t.account) = $1 or lower(t.recipient) = $1
+    union all
+    select case when lower(x.to_addr) = $1 then 'transfer_in' else 'transfer_out' end::text,
+      coalesce(m.symbol, 'CRAB'), null::text, x.amount::text,
+      (select price::text from ticks where ticks.market_id = x.market_id and ticks.block <= x.block order by ticks.block desc, ticks.ts desc limit 1),
+      x.ts, x.tx_hash, x.log_index
+    from transfers x left join markets m on m.id = x.market_id
+    where lower(x.from_addr) = $1 or lower(x.to_addr) = $1
+    union all
+    select case when lower(v.kind) = 'deposit' then 'deposit' else 'withdraw' end::text,
+      'CRAB', v.assets::text, v.shares::text,
+      case when v.shares > 0 then (v.assets / v.shares)::text else null end,
+      v.ts, v.tx_hash, v.log_index
+    from vault_events v where lower(v.account) = $1
+  )
+  select activity.* from activity
+  where ($2 = 'all'
+    or ($2 = 'trades' and activity.kind in ('buy', 'sell', 'transfer_in', 'transfer_out') and activity.symbol <> 'CRAB')
+    or ($2 = 'vault' and activity.symbol = 'CRAB'))
+    ${cursorClause}
+  order by activity.ts desc, activity.tx_hash desc, activity.log_index desc
+  limit ${limitPlaceholder}`;
+  const result = await deps.sql.unsafe(query, params);
+  const allItems = asRows<ActivityRow>(result);
+  const hasMore = allItems.length > limit;
+  const page = allItems.slice(0, limit);
+  return {
+    items: page.map((row) => ({
+      id: `${row.tx_hash}:${row.log_index}`,
+      kind: row.kind,
+      symbol: row.symbol,
+      usdg: row.usdg,
+      tokens: row.tokens,
+      price: row.price,
+      ts: dateValue(row.ts)?.toISOString() ?? String(row.ts),
+      txHash: row.tx_hash,
+    })),
+    nextCursor: hasMore && page.length > 0 ? encodeCursor(page[page.length - 1]!) : null,
+  };
+}

@@ -2,6 +2,7 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { cors } from "hono/cors";
 import type { ApiDependencies } from "./types";
 import { openApiDocument } from "./openapi";
+import { registerAccountRoutes } from "./routes/accounts";
 import { registerConfigRoutes } from "./routes/config";
 import { registerHealthRoutes } from "./routes/health";
 import { registerMarketRoutes } from "./routes/markets";
@@ -39,6 +40,7 @@ export function createApiApp(deps: ApiDependencies) {
   registerHealthRoutes(app, deps);
   registerConfigRoutes(app, deps);
   registerMarketRoutes(app, deps);
+  registerAccountRoutes(app, deps);
 
   app.get("/v1/openapi.json", (context) => {
     try {
