@@ -124,15 +124,16 @@ export async function updateCorporateActions(context: KeeperContext): Promise<Re
     multiplierCheckDate = today;
   }
 
-  const pending = await context.sql<{ id: string; market_id: number; effective_at: Date }[]>`
+  const pending = await context.sql<{ id: string; market_id: number; effective_at: Date | string }[]>`
     select a.id,m.id as market_id,a.effective_at from corp_actions a join markets m on a.symbol=m.symbol
     where a.effective_at <= ${new Date(now.getTime() - 3600000).toISOString()} and a.verified_continuity is null`;
   for (const action of pending) {
-    const from = new Date(action.effective_at.getTime() - 3600000);
-    const to = new Date(action.effective_at.getTime() + 3600000);
+    const effectiveAt = new Date(action.effective_at);
+    const from = new Date(effectiveAt.getTime() - 3600000);
+    const to = new Date(effectiveAt.getTime() + 3600000);
     const rows = await context.sql<{ before: string | null; after: string | null }[]>`
-      select avg("index") filter(where ts < ${action.effective_at.toISOString()}) as before,
-        avg("index") filter(where ts >= ${action.effective_at.toISOString()}) as after
+      select avg("index") filter(where ts < ${effectiveAt.toISOString()}) as before,
+        avg("index") filter(where ts >= ${effectiveAt.toISOString()}) as after
       from ticks where market_id=${action.market_id} and ts between ${from.toISOString()} and ${to.toISOString()}`;
     const before = Number(rows[0]?.before ?? 0);
     const after = Number(rows[0]?.after ?? 0);

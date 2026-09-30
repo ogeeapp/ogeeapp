@@ -34,12 +34,12 @@ export function createRiskJob(context: KeeperContext) {
         haltSent = !result.simulated;
       }
     } else haltSent = false;
-    const ticks = await context.sql<{ market_id: number; regime: number; oracle_updated_at: Date }[]>`
+    const ticks = await context.sql<{ market_id: number; regime: number; oracle_updated_at: Date | string }[]>`
       select distinct on (market_id) market_id, regime, oracle_updated_at from ticks order by market_id, ts desc`;
     for (const tick of ticks) {
       const market = metadata.marketsById?.[String(tick.market_id)];
       if (!market) continue;
-      const age = (now.getTime() - tick.oracle_updated_at.getTime()) / 1000;
+      const age = (now.getTime() - new Date(tick.oracle_updated_at).getTime()) / 1000;
       if (tick.regime === 0 && age > Number(market.config.maxAgeOpen) * 0.8) warnings.push(`${market.symbol} oracle is approaching its maximum age`);
       if (market.state.lastUtilBps > 9000) warnings.push(`${market.symbol} utilization exceeds 90%`);
     }
