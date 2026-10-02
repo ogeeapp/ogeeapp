@@ -108,6 +108,40 @@ abstract contract PowerEngineFixture is Test {
 }
 
 contract PowerEngineTest is PowerEngineFixture {
+    function testFirstBuyAfterLongIdleAccruesAndSubsequentPositionStillDecays() public {
+        // No holder pays for the idle interval. The first buy must match the
+        // live quote even after the engine's seven-day projection cap.
+        vm.warp(block.timestamp + 10 days);
+        feed.setAnswer(10_000_000_000);
+        uint256 projected = engine.currentNormFactor(0);
+        assertEq(projected, WAD - BASE_CARRY * 7);
+        assertEq(token.totalSupply(), 0);
+        (uint256 quoted,,,) = engine.quoteBuy(0, 2 * USDG);
+        uint256 bought = _buy(2 * USDG);
+        assertEq(bought, quoted);
+        MarketState memory state = engine.getState(0);
+        assertEq(state.normFactor, projected);
+        assertEq(state.lastAccrual, block.timestamp);
+        assertEq(state.vaultShort, token.totalSupply());
+
+        // Once supply exists, normal keeper accrual and a full exit still work.
+        vm.warp(block.timestamp + 6 hours);
+        engine.accrueAll();
+        assertLt(engine.getState(0).normFactor, projected);
+        (uint256 sellQuote,,) = engine.quoteSell(0, bought);
+        vm.prank(ALICE);
+        assertEq(engine.sell(0, bought, sellQuote, ALICE, block.timestamp + 1 hours), sellQuote);
+        assertEq(token.totalSupply(), 0);
+        assertEq(engine.getState(0).vaultShort, 0);
+
+        // A second prolonged idle period also permits trading without a poke.
+        vm.warp(block.timestamp + 21 days);
+        feed.setAnswer(10_000_000_000);
+        (quoted,,,) = engine.quoteBuy(0, 2 * USDG);
+        assertEq(_buy(2 * USDG), quoted);
+        assertEq(engine.getState(0).lastAccrual, block.timestamp);
+    }
+
     function testIndexMathAndContinuousFeedIndex() public {
         assertEq(engine.index(0), 10 * WAD);
         feed.setAnswer(20_000_000_000); // $200.00: 200^2 / 1000 = 40

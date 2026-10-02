@@ -18,6 +18,7 @@ export interface IndexedMarket {
     regime: number;
     lastUtilBps: number;
     buysPaused: boolean;
+    vaultShort?: string;
   };
 }
 
@@ -37,6 +38,10 @@ export interface IndexerMetadata {
   chainTimestamp?: string;
   chainTimeObservedAt?: string;
   lagBlocks?: number | string;
+  pendingSnapshot?: boolean;
+  registrySyncPending?: boolean;
+  indexerLastOk?: string;
+  indexerLastError?: string | null;
 }
 
 export interface KeeperContext {
@@ -51,8 +56,14 @@ export interface KeeperContext {
 }
 
 export async function readIndexerMetadata(sql: OgeeDbClient["sql"]): Promise<IndexerMetadata> {
-  const rows = await sql<{ meta: IndexerMetadata }[]>`select meta from keeper_status where job = 'indexer'`;
-  return rows[0]?.meta ?? {};
+  const rows = await sql<{ meta: IndexerMetadata; last_ok: Date | string | null; last_error: string | null }[]>`
+    select meta, last_ok, last_error from keeper_status where job = 'indexer'`;
+  const row = rows[0];
+  if (!row) return {};
+  return { ...row.meta,
+    indexerLastOk: row.last_ok instanceof Date ? row.last_ok.toISOString() : row.last_ok ?? "",
+    indexerLastError: row.last_error,
+  };
 }
 
 export function chainClock(config: RuntimeConfig, meta: IndexerMetadata): Date {
