@@ -123,7 +123,7 @@ export async function handleVaultEvent(context: IndexerContext, event: ChainEven
       context.kinds.add("vault");
       return;
     }
-    case "ParamsUpdated":
+    case "ParamsUpdated": {
       Object.assign(context.vaultConfig, {
         lockSeconds: asNumber(event.args.lockSeconds),
         cashBufferBps: asNumber(event.args.cashBufferBps),
@@ -133,8 +133,15 @@ export async function handleVaultEvent(context: IndexerContext, event: ChainEven
         minHedgeTradeUsdg: usdg(event.args.minHedgeTradeUsdg),
         maxTotalDeposits: usdg(event.args.maxTotalDeposits),
       });
+      // unlockTime uses the current global duration, including older deposits.
+      // Refresh holders even though this event has no account argument.
+      const holders = await context.tx<{ account: string }[]>`
+        SELECT account FROM vault_account_state WHERE unlock_time IS NOT NULL
+      `;
+      for (const holder of holders) touch(context, holder.account);
       context.kinds.add("config");
       return;
+    }
     case "PublicDepositsUpdated":
       context.vaultConfig.publicDeposits = Boolean(event.args.enabled);
       context.kinds.add("config");
