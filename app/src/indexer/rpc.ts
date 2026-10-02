@@ -70,7 +70,7 @@ export async function timestampsForLogs(
     const blockNumber = asBigInt(log.blockNumber, -1n);
     if (blockNumber < 0n) continue;
     const cached = cache.get(blockNumber);
-    if (cached) timestamps.set(log, cached);
+    if (cached && cached.getTime() > 0) timestamps.set(log, cached);
     else missing.add(blockNumber);
   }
 

@@ -55,7 +55,9 @@ export function parseUsdg(value: string): bigint {
 
 export function parseChainTimestamp(value: unknown): Date | undefined {
   const timestamp = asBigInt(value, -1n);
-  if (timestamp < 0n || timestamp > BigInt(Math.floor(8.64e12))) return undefined;
+  // Some RHC log providers include 0x0 as a missing blockTimestamp marker.
+  // It is not a real event time: resolve the canonical block header instead.
+  if (timestamp <= 0n || timestamp > BigInt(Math.floor(8.64e12))) return undefined;
   return new Date(Number(timestamp) * 1_000);
 }
 
