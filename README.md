@@ -26,6 +26,36 @@ app/         Bun services: API, indexer, keeper, migrations
 
 `PowerEngine`, `CrabVault` and `MarketHours` are UUPS upgradeable. OpenZeppelin v5.4.0 and forge-std v1.9.7 are vendored in `contracts/lib`.
 
+### Mainnet deployment
+
+Robinhood Chain mainnet (chain ID `4663`), deployed at block `78474037`. All contracts below are verified on [Sourcify](https://sourcify.dev) (full match). Explorer: [robinhoodchain.blockscout.com](https://robinhoodchain.blockscout.com).
+
+| Contract | Address |
+| --- | --- |
+| `PowerEngine` (proxy) | [`0x24C07e3b2FfCEE19D9c303c45f1fff4E42fc8E3C`](https://robinhoodchain.blockscout.com/address/0x24C07e3b2FfCEE19D9c303c45f1fff4E42fc8E3C) |
+| `CrabVault` (proxy) | [`0x62e10868275CD724cd623e80820e5a895cCeC618`](https://robinhoodchain.blockscout.com/address/0x62e10868275CD724cd623e80820e5a895cCeC618) |
+| `MarketHours` (proxy) | [`0xC302aD192Ea10c58a503A00E3B5b5C4D76eE4989`](https://robinhoodchain.blockscout.com/address/0xC302aD192Ea10c58a503A00E3B5b5C4D76eE4989) |
+| `OgeeLens` | [`0x616E558A5b4C388e1be8592980ca95A24D36Ee05`](https://robinhoodchain.blockscout.com/address/0x616E558A5b4C388e1be8592980ca95A24D36Ee05) |
+| `UniswapV3HedgeAdapter` | [`0x97F436673758f156eb68481687A60C76f24a1f93`](https://robinhoodchain.blockscout.com/address/0x97F436673758f156eb68481687A60C76f24a1f93) |
+| `PowerTokenFactory` | [`0xe0a654BC07c4FB87B6e8E54B4e17E0238C25bdbb`](https://robinhoodchain.blockscout.com/address/0xe0a654BC07c4FB87B6e8E54B4e17E0238C25bdbb) |
+| `EngineHelper` | [`0xe8F2c080D6bf48A2c8b6A24A7539524Bef5eBE88`](https://robinhoodchain.blockscout.com/address/0xe8F2c080D6bf48A2c8b6A24A7539524Bef5eBE88) |
+| `PowerEngine` (implementation) | [`0xD4B1FC5471bC28dC4Fb1e2B6A8E635B3312E8dD4`](https://robinhoodchain.blockscout.com/address/0xD4B1FC5471bC28dC4Fb1e2B6A8E635B3312E8dD4) |
+| `CrabVault` (implementation) | [`0x43BFcb5dAdA427FC40e2b97454a31783204e76d0`](https://robinhoodchain.blockscout.com/address/0x43BFcb5dAdA427FC40e2b97454a31783204e76d0) |
+| `MarketHours` (implementation) | [`0x2dFFC40B5FA09a584C057D16426B1952AD69865C`](https://robinhoodchain.blockscout.com/address/0x2dFFC40B5FA09a584C057D16426B1952AD69865C) |
+| USDG (collateral) | [`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`](https://robinhoodchain.blockscout.com/address/0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168) |
+
+Markets (`PowerToken` per market, and the stock token it tracks):
+
+| Market | PowerToken | Stock token |
+| --- | --- | --- |
+| NVDA | [`0x707602d1617EbfdeB0100829cb65BC9Bd7842051`](https://robinhoodchain.blockscout.com/address/0x707602d1617EbfdeB0100829cb65BC9Bd7842051) | `0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC` |
+| TSLA | [`0x230b605b6532020d79dF840Ee185a464d419ae6A`](https://robinhoodchain.blockscout.com/address/0x230b605b6532020d79dF840Ee185a464d419ae6A) | `0x322F0929c4625eD5bAd873c95208D54E1c003b2d` |
+| SPY | [`0xfb4EF44DdDcC4b24Ba5ea9789741b2817537b35b`](https://robinhoodchain.blockscout.com/address/0xfb4EF44DdDcC4b24Ba5ea9789741b2817537b35b) | `0x117cc2133c37B721F49dE2A7a74833232B3B4C0C` |
+| PLTR | [`0xF00ee0133c66bfcfAC087fCc226638D5a69e4B4e`](https://robinhoodchain.blockscout.com/address/0xF00ee0133c66bfcfAC087fCc226638D5a69e4B4e) | `0x894E1EC2D74FFE5AEF8Dc8A9e84686acCB964F2A` |
+| AAPL | [`0x9122bC8A36DCBC965aD86574D421b44B7F8e211E`](https://robinhoodchain.blockscout.com/address/0x9122bC8A36DCBC965aD86574D421b44B7F8e211E) | `0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9` |
+
+Always talk to the proxy addresses; implementations change on upgrade. Current addresses are also served by the API at `/v1/config`.
+
 ### Services (`app/src`)
 
 | Service | Entry | What it does |
