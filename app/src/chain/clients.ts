@@ -17,7 +17,12 @@ export interface ServiceClients {
   readonly pool: RpcPool;
 }
 
-export function createClients(config: RuntimeConfig, pool = createRpcPool(config)): ServiceClients {
+/** `signerKey` is passed only by the keeper; other services get read-only clients. */
+export function createClients(
+  config: RuntimeConfig,
+  pool = createRpcPool(config),
+  signerKey?: `0x${string}`,
+): ServiceClients {
   if (config.CHAIN_ID !== robinhoodChain.id) {
     throw new Error(`Unsupported chain id ${config.CHAIN_ID}; this service only supports 4663`);
   }
@@ -37,10 +42,9 @@ export function createClients(config: RuntimeConfig, pool = createRpcPool(config
     transport: pool.transport("tx"),
   });
 
-  const privateKey = config.KEEPER_PRIVATE_KEY?.trim();
-  if (!privateKey) return { logsClient, stateClient, txClient, pool };
+  if (!signerKey) return { logsClient, stateClient, txClient, pool };
 
-  const account = privateKeyToAccount(privateKey as `0x${string}`);
+  const account = privateKeyToAccount(signerKey);
   const walletClient = createWalletClient({
     account,
     chain: robinhoodChain,

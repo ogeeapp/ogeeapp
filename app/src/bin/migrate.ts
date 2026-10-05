@@ -1,8 +1,9 @@
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { createLogger, safeErrorSummary } from "../log";
-import { loadConfig, safeConfigSummary } from "../config";
+import { loadConfig, safeConfigSummary, stripKeeperSecrets } from "../config";
 import { createDbClient } from "../db/client";
 
+stripKeeperSecrets();
 const config = loadConfig();
 const logger = createLogger(config.LOG_LEVEL, "migrate");
 const { db, sql } = createDbClient(config);

@@ -29,11 +29,6 @@ const envSchema = z.object({
   INDEXER_POLL_BASE_MS: z.coerce.number().int().positive().default(15000),
   INDEXER_POLL_IDLE_MS: z.coerce.number().int().positive().default(60000),
   DEPLOYMENT_FILE: z.string().min(1).default("/app/deployments/fork.json"),
-  KEEPER_PRIVATE_KEY: z
-    .string()
-    .regex(/^0x[0-9a-fA-F]{64}$/)
-    .optional()
-    .or(z.literal("")),
   KEEPER_ENABLED_JOBS: z.string().default("sessions,accrue,hedge,carry,risk,corp-actions"),
   KEEPER_DRY_RUN: z.enum(["0", "1"]).default("0").transform((value) => value === "1"),
   API_PORT: z.coerce.number().int().min(1).max(65535).default(3101),
@@ -87,6 +82,23 @@ export function loadConfig(source: Record<string, string | undefined> = process.
       result.data.CORS_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean),
     ),
   });
+}
+
+/** The keeper signing key is deliberately not part of the shared schema: only
+ * the keeper entry point reads it, so other services never load a signer even
+ * when they share an env file. */
+export function loadKeeperSigningKey(source: Record<string, string | undefined> = process.env): `0x${string}` | undefined {
+  const value = source.KEEPER_PRIVATE_KEY?.trim();
+  if (!value) return undefined;
+  if (!/^0x[0-9a-fA-F]{64}$/.test(value)) {
+    throw new ConfigurationError("Invalid service configuration: KEEPER_PRIVATE_KEY must be a 0x-prefixed 32-byte hex key");
+  }
+  return value as `0x${string}`;
+}
+
+/** Remove keeper-only secrets from a non-keeper process environment. */
+export function stripKeeperSecrets(source: Record<string, string | undefined> = process.env): void {
+  delete source.KEEPER_PRIVATE_KEY;
 }
 
 export function safeConfigSummary(config: RuntimeConfig): Record<string, string | number | boolean> {

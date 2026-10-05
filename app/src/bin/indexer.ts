@@ -1,7 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { createClients } from "../chain/clients";
 import { assertDeploymentNetwork, loadDeployment } from "../chain/deployment";
-import { loadConfig, safeConfigSummary } from "../config";
+import { loadConfig, safeConfigSummary, stripKeeperSecrets } from "../config";
 import { createDbClient } from "../db/client";
 import { createLogger, safeErrorSummary } from "../log";
 import {
@@ -12,6 +12,8 @@ import {
   type IndexerState,
 } from "../indexer/ingest";
 
+// Never keep the keeper signing key in a non-keeper process, even if it shares an env file.
+stripKeeperSecrets();
 const config = loadConfig();
 const logger = createLogger(config.LOG_LEVEL, "indexer");
 const clients = createClients(config);

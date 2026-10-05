@@ -3,7 +3,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { keccak256, parseAbi, stringToHex } from "viem";
 import { createClients } from "../chain/clients";
 import { assertDeploymentNetwork, loadDeployment, type Deployment } from "../chain/deployment";
-import { loadConfig, safeConfigSummary } from "../config";
+import { loadConfig, loadKeeperSigningKey, safeConfigSummary } from "../config";
+import { createRpcPool } from "../chain/rpc-pool";
 import { createDbClient } from "../db/client";
 import { createLogger, safeErrorSummary } from "../log";
 import { MarketHoursAbi } from "../abi/MarketHours";
@@ -20,7 +21,7 @@ import { updateCorporateActions } from "./jobs/corp-actions";
 
 const config = loadConfig();
 const logger = createLogger(config.LOG_LEVEL, "keeper");
-const clients = createClients(config);
+const clients = createClients(config, createRpcPool(config), loadKeeperSigningKey());
 const { sql } = createDbClient(config);
 const abort = new AbortController();
 for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => abort.abort());

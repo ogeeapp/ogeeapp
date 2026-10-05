@@ -1,10 +1,12 @@
 import { createApiApp } from "../api/app";
-import { loadConfig, safeConfigSummary } from "../config";
+import { loadConfig, safeConfigSummary, stripKeeperSecrets } from "../config";
 import { assertDeploymentNetwork, loadDeployment } from "../chain/deployment";
 import { createDbClient } from "../db/client";
 import { TtlCache } from "../api/cache";
 import { createLogger, safeErrorSummary } from "../log";
 
+// Never keep the keeper signing key in a non-keeper process, even if it shares an env file.
+stripKeeperSecrets();
 const config = loadConfig();
 const logger = createLogger(config.LOG_LEVEL, "api");
 const deployment = await loadDeployment(config.DEPLOYMENT_FILE);
