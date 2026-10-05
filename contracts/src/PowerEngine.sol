@@ -735,8 +735,16 @@ contract PowerEngine is
         }
 
         if (m.regime == Regime.PAUSED) {
-            m.spot = state.lastGoodPrice;
-            m.index = state.lastGoodIndex;
+            // A paused market marks at the last good accrued price, unless a newer well-formed round is lower: the
+            // last good price only refreshes on accrual, so it can lag a fall that happened while nobody traded.
+            // A drop of half the spot or more is treated as a corporate-action transient and ignored.
+            uint256 goodIndex = state.lastGoodIndex;
+            if (!m.valid || m.updatedAt <= state.lastGoodAt || m.index >= goodIndex || m.index * 4 <= goodIndex) {
+                m.spot = state.lastGoodPrice;
+                m.index = goodIndex;
+            } else {
+                m.spot = m.liveSpot;
+            }
         } else {
             m.spot = m.liveSpot;
         }
