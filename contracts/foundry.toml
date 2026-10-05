@@ -12,6 +12,8 @@ evm_version = "cancun"
 # Pinned build-of-record settings (these are the defaults the mainnet build used).
 bytecode_hash = "ipfs"
 cbor_metadata = true
+# Operational scripts read deployment files from the project and write batches under out/.
+fs_permissions = [{ access = "read", path = "./" }, { access = "read-write", path = "./out" }]
 # Vendored without git metadata using forge install --no-git:
 # OpenZeppelin contracts and contracts-upgradeable v5.4.0; forge-std v1.9.7.
 remappings = [
