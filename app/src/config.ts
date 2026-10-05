@@ -31,6 +31,9 @@ const envSchema = z.object({
   DEPLOYMENT_FILE: z.string().min(1).default("/app/deployments/fork.json"),
   KEEPER_ENABLED_JOBS: z.string().default("sessions,accrue,hedge,carry,risk,corp-actions"),
   KEEPER_DRY_RUN: z.enum(["0", "1"]).default("0").transform((value) => value === "1"),
+  // Accrue every market once any market's last accrual is this old while positions are open. Paused marks fall
+  // back to the last accrued price, so a short interval keeps that price close to the feed.
+  KEEPER_ACCRUE_MAX_AGE_SECONDS: z.coerce.number().int().min(300).default(3600),
   API_PORT: z.coerce.number().int().min(1).max(65535).default(3101),
   CORS_ORIGINS: z.string().default(""),
   // Per-client-IP requests per minute on the public API (0 disables).

@@ -24,6 +24,7 @@ function accrualFixture() {
   let rpcFailed = false;
   const context = {
     metadata: async () => meta, now: () => now,
+    config: { KEEPER_ACCRUE_MAX_AGE_SECONDS: 3600 },
     deployment: { markets: [{ id: 0, token }, { id: 1, token }], contracts: { engine: token } },
     tx: { submit: async () => { sent++; return { simulated: false }; } },
     clients: { stateClient: { multicall: async () => {
@@ -37,6 +38,19 @@ function accrualFixture() {
 }
 
 describe("idle accrual", () => {
+  test("accrues active markets once the configured max age passes", async () => {
+    const f = accrualFixture();
+    const markets = f.meta.marketsById!;
+    markets["0"]!.state.vaultShort = "5";
+    markets["0"]!.state.lastAccrual = String(timestamp(now) - 3599n);
+    markets["1"]!.state.lastAccrual = String(timestamp(now) - 3599n);
+    expect(await accrueStale(f.context)).toEqual({ stale: false, idle: false });
+    expect(f.sent()).toBe(0);
+    markets["1"]!.state.lastAccrual = String(timestamp(now) - 3600n);
+    expect((await accrueStale(f.context)).stale).toBe(true);
+    expect(f.sent()).toBe(1);
+  });
+
   test("zero supply skips periodic accrual using the indexer, and verifies forced boundary skips on-chain", async () => {
     const f = accrualFixture();
     expect(await accrueStale(f.context)).toEqual({ stale: true, idle: true });

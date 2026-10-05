@@ -50,7 +50,8 @@ export async function accrueStale(context: KeeperContext, force = false): Promis
     throw new Error("Waiting for complete indexed accrual state");
   }
   const now = context.now(metadata).getTime() / 1000;
-  const stale = states.some((market) => now - Number(market.state.lastAccrual) >= 6 * 3600);
+  const maxAge = context.config.KEEPER_ACCRUE_MAX_AGE_SECONDS;
+  const stale = states.some((market) => now - Number(market.state.lastAccrual) >= maxAge);
   // Trades accrue in the engine before minting/burning. Keep hedging enabled
   // independently: the last seller may leave a hedge that needs unwinding.
   if (hasNoPositions(context, metadata)
