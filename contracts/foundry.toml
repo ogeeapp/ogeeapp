@@ -26,3 +26,11 @@ remappings = [
 [invariant]
 runs = 50
 depth = 20
+
+# Deep stateful run (>= 100k handler calls): FOUNDRY_PROFILE=deep forge test --match-path 'test/invariant/*'
+[profile.deep.invariant]
+runs = 500
+depth = 200
+
+[profile.deep.fuzz]
+runs = 5000
