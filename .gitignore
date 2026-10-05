@@ -48,3 +48,5 @@ coverage/
 *.db
 *.sqlite*
 .DS_Store
+lcov.info
+coverage/
