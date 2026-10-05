@@ -68,6 +68,8 @@ export const portfolioResponseSchema = z.object({
     costBasis: decimal, unrealizedPnl: decimal, realizedPnl: decimal })),
   crab: z.object({ shares: decimal, value: decimal, unlockTime: isoDateTime.nullable(), isDepositor: z.boolean() }),
   totals: z.object({ powerValue: decimal, unrealizedPnl: decimal, realizedPnl: decimal }),
+  /** False when the cost-basis ledger was capped to the newest entries. */
+  historyComplete: z.boolean(),
 });
 
 export const activityResponseSchema = z.object({
