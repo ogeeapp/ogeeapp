@@ -22,44 +22,7 @@ contract OgeeLens is IOgeeLens {
         ICrabVault crab = engine.vault();
 
         for (uint256 i; i < count; ++i) {
-            uint8 id = uint8(i);
-            MarketConfig memory config = engine.getConfig(id);
-            MarketState memory state = engine.getState(id);
-            (uint256 spot, uint256 spotUpdatedAt, bool oracleValid) = engine.spotPrice(id);
-            uint8 regime = uint8(engine.currentRegime(id));
-            if (regime == 2 || !oracleValid || spot == 0) {
-                spot = state.lastGoodPrice;
-                spotUpdatedAt = state.lastGoodAt;
-            }
-            uint256 hedgeTarget = Math.mulDiv(engine.hedgeDelta(id), crab.hedgeRatioBps(), BPS);
-            (uint256 bidPrice, uint256 askPrice, uint256 capacityUsdg) = _oneUsdQuotes(engine, id);
-
-            result[i] = MarketView({
-                id: id,
-                token: address(config.token),
-                stock: address(config.stock),
-                symbol: PowerToken(address(config.token)).symbol(),
-                scale: config.scale,
-                regime: regime,
-                buysPaused: state.buysPaused || engine.globalBuysPaused(),
-                spot: spot,
-                spotUpdatedAt: spotUpdatedAt,
-                index: engine.index(id),
-                normFactor: engine.currentNormFactor(id),
-                price: engine.tokenPrice(id),
-                carryWad: engine.currentCarryWad(id),
-                vaultShort: state.vaultShort,
-                liability: engine.liability(id),
-                capacityUsdg: capacityUsdg,
-                hedgeUnits: crab.hedgeUnits(id),
-                hedgeTarget: hedgeTarget,
-                bidPrice1: bidPrice,
-                askPrice1: askPrice,
-                multiplier: config.stock.uiMultiplier(),
-                pendingMultiplier: config.stock.newUIMultiplier(),
-                multiplierEffectiveAt: config.stock.effectiveAt(),
-                oraclePaused: config.stock.oraclePaused()
-            });
+            result[i] = _market(engine, crab, uint8(i));
         }
     }
 
@@ -103,6 +66,53 @@ contract OgeeLens is IOgeeLens {
             unlockTime: crab.unlockTime(user),
             isDepositor: crab.isDepositor(user)
         });
+    }
+
+    /// @dev Field-by-field assembly split over helpers keeps every frame shallow enough for unoptimized via-IR
+    /// builds (coverage), with the same values as a single struct literal.
+    function _market(IPowerEngine engine, ICrabVault crab, uint8 id) private view returns (MarketView memory v) {
+        MarketConfig memory config = engine.getConfig(id);
+        MarketState memory state = engine.getState(id);
+        v.id = id;
+        v.token = address(config.token);
+        v.stock = address(config.stock);
+        v.symbol = PowerToken(address(config.token)).symbol();
+        v.scale = config.scale;
+        v.vaultShort = state.vaultShort;
+        v.buysPaused = state.buysPaused || engine.globalBuysPaused();
+        _fillSpot(engine, id, state, v);
+        _fillEngine(engine, crab, id, v);
+        _fillStock(config, v);
+    }
+
+    function _fillSpot(IPowerEngine engine, uint8 id, MarketState memory state, MarketView memory v) private view {
+        (uint256 spot, uint256 spotUpdatedAt, bool oracleValid) = engine.spotPrice(id);
+        uint8 regime = uint8(engine.currentRegime(id));
+        if (regime == 2 || !oracleValid || spot == 0) {
+            spot = state.lastGoodPrice;
+            spotUpdatedAt = state.lastGoodAt;
+        }
+        v.regime = regime;
+        v.spot = spot;
+        v.spotUpdatedAt = spotUpdatedAt;
+    }
+
+    function _fillEngine(IPowerEngine engine, ICrabVault crab, uint8 id, MarketView memory v) private view {
+        v.hedgeTarget = Math.mulDiv(engine.hedgeDelta(id), crab.hedgeRatioBps(), BPS);
+        (v.bidPrice1, v.askPrice1, v.capacityUsdg) = _oneUsdQuotes(engine, id);
+        v.index = engine.index(id);
+        v.normFactor = engine.currentNormFactor(id);
+        v.price = engine.tokenPrice(id);
+        v.carryWad = engine.currentCarryWad(id);
+        v.liability = engine.liability(id);
+        v.hedgeUnits = crab.hedgeUnits(id);
+    }
+
+    function _fillStock(MarketConfig memory config, MarketView memory v) private view {
+        v.multiplier = config.stock.uiMultiplier();
+        v.pendingMultiplier = config.stock.newUIMultiplier();
+        v.multiplierEffectiveAt = config.stock.effectiveAt();
+        v.oraclePaused = config.stock.oraclePaused();
     }
 
     function _oneUsdQuotes(IPowerEngine engine, uint8 id)
