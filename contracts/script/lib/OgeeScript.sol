@@ -83,7 +83,7 @@ abstract contract OgeeScript is Script {
 
     // ---------------------------------------------------------------- deployment loading
 
-    function loadDeployment() internal returns (Deployment memory d) {
+    function loadDeployment() internal view returns (Deployment memory d) {
         d.chainId = block.chainid;
         d.source = "env";
         if (block.chainid == ROBINHOOD_MAINNET) {
