@@ -433,8 +433,7 @@ contract PowerEngine is
         _requireMarket(id);
         (Mark[] memory marks, uint256 total) = _book(_env());
         Mark memory m = marks[id];
-        if (m.regime == Regime.PAUSED) revert RegimePaused();
-        _requireStockTransferable(id);
+        _requireBuyable(id, m);
         int256 navWad = vault.navFor(total, _spotsOf(marks));
         MarketConfig storage config = _configs[id];
         Quote memory quote = _quoteBuy(config, m, navWad, usdgIn);
@@ -478,8 +477,7 @@ contract PowerEngine is
         (Mark[] memory marks, uint256 total) = _book(_env());
         Mark memory m = marks[id];
         _applyAccrual(id, m);
-        if (m.regime == Regime.PAUSED) revert RegimePaused();
-        _requireStockTransferable(id);
+        _requireBuyable(id, m);
         uint256[] memory spots = _spotsOf(marks);
         int256 navWad = vault.navFor(total, spots);
 
@@ -786,9 +784,15 @@ contract PowerEngine is
         }
     }
 
-    /// @dev A token-level (beacon-wide) pause freezes stock transfers, so the vault cannot hedge new exposure.
-    /// Checked only when opening exposure; sells stay available and can be paid from cash.
-    function _requireStockTransferable(uint8 id) private view {
+    /// @dev Buys need a live regime and, off-hours, a feed round younger than `offHoursBuyMaxAge`. A token-level
+    /// (beacon-wide) pause freezes stock transfers, so the vault cannot hedge new exposure. Checked only when opening
+    /// exposure; sells stay available and can be paid from cash.
+    function _requireBuyable(uint8 id, Mark memory m) private view {
+        if (m.regime == Regime.PAUSED) revert RegimePaused();
+        if (m.regime == Regime.OFF_HOURS) {
+            uint256 maxAge = _configs[id].offHoursBuyMaxAge;
+            if (maxAge != 0 && block.timestamp - m.updatedAt > maxAge) revert RegimePaused();
+        }
         try _hot[id].stock.paused() returns (bool paused) {
             if (paused) revert RegimePaused();
         } catch {

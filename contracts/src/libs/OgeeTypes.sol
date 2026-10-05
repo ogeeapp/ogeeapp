@@ -42,7 +42,9 @@ struct MarketConfig {
     uint32 maxAgeOffHours;
     uint8 kind;
     address feed2;
-    uint64 reserved;
+    /// @dev Off-hours buys revert once the feed round is older than this many seconds (0 = no limit). Weekend moves
+    /// are public on 24/7 venues, so a held Friday close is a free option for buyers.
+    uint64 offHoursBuyMaxAge;
 }
 
 struct MarketState {
