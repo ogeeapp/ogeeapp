@@ -172,9 +172,12 @@ contract SystemInvariantTest is SystemFixture {
 
     /// @notice Protects against arithmetic bugs: no handler action ever hit a Panic (overflow, div by zero, enum).
     /// Also: the treasury balance never decreases.
+    /// No panics, the treasury never loses USDG, and an exact-assets withdraw within maxWithdraw never fails on
+    /// a short-filled cash raise.
     function invariant_noPanicsAndTreasuryMonotone() public view {
         assertEq(handler.ghostPanics(), 0, "panic");
         assertEq(handler.ghostTreasuryDecreases(), 0, "treasury decreased");
+        assertEq(handler.ghostWithdrawCashShortReverts(), 0, "withdraw reverted on a short cash raise");
     }
 
     function afterInvariant() external view {

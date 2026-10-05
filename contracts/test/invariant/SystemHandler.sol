@@ -188,8 +188,8 @@ contract SystemHandler is CommonBase, StdCheats, StdUtils {
             if (locked) ++ghostLockedMoves;
             _checkSharePrice(priceBefore);
         } catch (bytes memory err) {
-            // Known open issue (EdgeCasesTest.testFindingExactAssetWithdrawNeedingCashRaiseReverts): a withdraw within
-            // maxWithdraw that needs a short-filled hedge sale reverts on the final USDG transfer. Count it.
+            // A withdraw within maxWithdraw must raise the full amount in cash; a short final transfer is a bug, which
+            // invariant_noPanicsAndTreasuryMonotone requires never to happen.
             if (err.length >= 4 && bytes4(err) == ERC20_INSUFFICIENT_BALANCE && amount <= maxAssets) {
                 ++ghostWithdrawCashShortReverts;
                 _after();

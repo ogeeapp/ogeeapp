@@ -122,20 +122,20 @@ contract EdgeCasesTest is SystemFixture {
     /// short, so the transfer reverts and the shortfall-in-shares charge is unreachable. `maxWithdraw` advertises the
     /// amount; `redeem` works (see above). When fixed, assert the withdraw succeeds, burns more than
     /// previewWithdraw, and keeps the other LP's value.
-    function testFindingExactAssetWithdrawNeedingCashRaiseReverts() public {
+    function testExactAssetWithdrawNeedingCashRaiseChargesExtraShares() public {
         _cashShortBook(0); // pool exactly at the oracle: the fee alone makes the sale fill short
         uint256 cash = usdg.balanceOf(address(vault));
         uint256 maxAssets = vault.maxWithdraw(lp);
         uint256 assets = cash + 100_000 * USDG < maxAssets ? cash + 100_000 * USDG : maxAssets;
         assertGt(assets, cash, "withdraw needs a cash raise");
+        uint256 previewShares = vault.previewWithdraw(assets);
+        uint256 navPerShareBefore = vault.navPerShareWad();
+        uint256 before = usdg.balanceOf(lp);
         vm.prank(lp);
-        vm.expectRevert(); // ERC20InsufficientBalance(vault, cash after sale, assets)
-        vault.withdraw(assets, lp, lp);
-        // The same exit as an exact-shares redeem goes through.
-        uint256 shares = vault.previewWithdraw(assets);
-        if (shares > vault.maxRedeem(lp)) shares = vault.maxRedeem(lp);
-        vm.prank(lp);
-        assertGt(vault.redeem(shares, lp, lp), cash);
+        uint256 burned = vault.withdraw(assets, lp, lp);
+        assertEq(usdg.balanceOf(lp) - before, assets, "exact assets paid");
+        assertGt(burned, previewShares, "shortfall charged in extra shares");
+        assertGe(vault.navPerShareWad(), navPerShareBefore, "remaining LPs must not lose");
     }
 
     function testDepositCapAndMintCap() public {

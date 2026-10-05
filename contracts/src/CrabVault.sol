@@ -349,7 +349,7 @@ contract CrabVault is
         paid = usdgAmount;
         if (usdg.balanceOf(address(this)) < usdgAmount) {
             (, ValuationMark[] memory marks) = engine.valuation();
-            uint256 shortfall = _ensureCash(usdgAmount, preferMarket, marks);
+            uint256 shortfall = _ensureCash(usdgAmount, preferMarket, marks, false);
             paid = usdgAmount > shortfall ? usdgAmount - shortfall : 0;
         }
         usdg.safeTransfer(to, paid);
@@ -452,7 +452,7 @@ contract CrabVault is
         paid = assets;
         burned = shares;
         if (v.cash < assets) {
-            uint256 shortfall = _ensureCash(assets, 0, v.marks);
+            uint256 shortfall = _ensureCash(assets, 0, v.marks, chargeShares);
             if (shortfall != 0) {
                 if (chargeShares) burned += _toShares(shortfall, v.navLow, Math.Rounding.Ceil);
                 else paid = assets > shortfall ? assets - shortfall : 0;
@@ -588,12 +588,14 @@ contract CrabVault is
     /// @dev Sells hedges until cash plus the accumulated execution shortfall covers `amount`. Each sale is sized at
     /// the oracle value still needed (no gross-up); proceeds below that value are returned as `shortfall` for the
     /// caller to charge to whoever triggered the sale. Proceeds above it stay with the vault.
-    function _ensureCash(uint256 amount, uint8 preferMarket, ValuationMark[] memory marks)
+    /// With `fullCash` (exact-assets withdraws) the caller receives all of `amount` and is charged the shortfall in
+    /// shares, so cash itself must reach `amount`: sales are grossed up by the slippage allowance.
+    function _ensureCash(uint256 amount, uint8 preferMarket, ValuationMark[] memory marks, bool fullCash)
         private
         returns (uint256 shortfall)
     {
         uint256 count = marks.length;
-        for (uint256 step; usdg.balanceOf(address(this)) + shortfall < amount && step <= count; ++step) {
+        for (uint256 step; _covered(shortfall, fullCash) < amount && step <= count; ++step) {
             uint8 id;
             if (step == 0) {
                 id = preferMarket;
@@ -609,8 +611,9 @@ contract CrabVault is
             uint256 price = _salePrice(id, marks[id].spot);
             if (units == 0 || price == 0 || address(adapter) == address(0)) continue;
 
-            uint256 need = amount - shortfall - usdg.balanceOf(address(this));
+            uint256 need = amount - _covered(shortfall, fullCash);
             uint256 unitsNeeded = Math.mulDiv(need, STOCK_VALUE_DENOMINATOR, price, Math.Rounding.Ceil);
+            if (fullCash) unitsNeeded = Math.mulDiv(unitsNeeded, BPS, BPS - maxHedgeSlippageBps, Math.Rounding.Ceil);
             uint256 unitsToSell = unitsNeeded < units ? unitsNeeded : units;
             if (unitsToSell == 0) continue;
 
@@ -626,7 +629,13 @@ contract CrabVault is
             emit CashRaised(id, sold, received);
         }
 
-        if (usdg.balanceOf(address(this)) + shortfall < amount) revert InsufficientLiquidity();
+        if (_covered(shortfall, fullCash) < amount) revert InsufficientLiquidity();
+    }
+
+    /// @dev Cash on hand plus, unless the full amount must be paid in cash, the shortfall the caller will absorb.
+    function _covered(uint256 shortfall, bool fullCash) private view returns (uint256) {
+        uint256 cash = usdg.balanceOf(address(this));
+        return fullCash ? cash : cash + shortfall;
     }
 
     /// @dev Reference price for a forced hedge sale: the higher of the regime spot and the pool TWAP. A held
