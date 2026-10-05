@@ -22,6 +22,7 @@ app/         Bun services: API, indexer, keeper, migrations
 | `CrabVault` | ERC-4626 vault over USDG. Counterparty for all trades, holds the hedges |
 | `MarketHours` | Market session calendar, pushed by the keeper |
 | `UniswapV3HedgeAdapter` | Swaps through Uniswap v3 `SwapRouter02` for hedging |
+| `UniswapV3TwapReference` | Pool TWAP that floors the vault's forced hedge sales |
 | `OgeeLens` | Read-only batched views for markets, the vault and accounts |
 
 `PowerEngine`, `CrabVault` and `MarketHours` are UUPS upgradeable. OpenZeppelin v5.4.0 and forge-std v1.9.7 are vendored in `contracts/lib`.
@@ -66,6 +67,21 @@ Always talk to the proxy addresses; implementations change on upgrade. Current a
 | Migrate | `bin/migrate.ts` | Applies Drizzle migrations from `app/drizzle` |
 
 Other folders: `abi/` (contract ABIs), `chain/` (RPC pool, clients, deployment file loader), `db/` (schema and queries), `lib/` (fixed-point and time helpers).
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for vulnerability reporting, the roles matrix, trust assumptions, threat model,
+accepted risks and audit history. Contract invariants and the tests that check them are listed in
+[contracts/INVARIANTS.md](contracts/INVARIANTS.md).
+
+## Upgrades and operations
+
+Upgrade, timelock handoff and post-deploy check scripts live in [`contracts/script`](contracts/script/README.md).
+The recommended order is: rehearse on a local fork, upgrade, run the post-deploy check, hand the admin role to a
+48-hour timelock controlled by a Safe, and run the check again.
+
+CI ([`.github/workflows`](.github/workflows)) builds and tests the contracts and services, runs Slither, Semgrep and
+Gitleaks on every push, and runs the read-only post-deploy check against mainnet every six hours.
 
 ## Requirements
 
