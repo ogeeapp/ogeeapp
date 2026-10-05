@@ -217,9 +217,7 @@ contract PowerEngine is
         address treasury_,
         address sequencerFeed_
     ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (maxGlobalExposureBps_ > BPS || protocolFeeShareBps_ > BPS || treasury_ == address(0)) {
-            revert InvalidMarketConfig();
-        }
+        _HELPER.validateGlobal(maxGlobalExposureBps_, protocolFeeShareBps_, treasury_);
         maxGlobalExposureBps = maxGlobalExposureBps_;
         protocolFeeShareBps = protocolFeeShareBps_;
         treasury = treasury_;
@@ -437,7 +435,7 @@ contract PowerEngine is
         int256 navWad = vault.navFor(total, _spotsOf(marks));
         MarketConfig storage config = _configs[id];
         Quote memory quote = _quoteBuy(config, m, navWad, usdgIn);
-        return (quote.amountOut, quote.fee, quote.price, _maxUsdgIn(config, m, navWad, total));
+        return (quote.amountOut, quote.fee, quote.price, _HELPER.maxUsdgIn(id));
     }
 
     /// @notice Returns an executable-side sell estimate in USDG.
@@ -609,27 +607,6 @@ contract PowerEngine is
         if (grossUsdg > cap || used > cap - grossUsdg) revert PausedSellCapExceeded();
         state.pausedSellBlock = uint64(block.timestamp);
         state.pausedSellUsed = uint128(used + grossUsdg);
-    }
-
-    function _maxUsdgIn(MarketConfig storage config, Mark memory m, int256 navWad, uint256 total)
-        private
-        view
-        returns (uint256 maxUsdgIn)
-    {
-        if (navWad <= 0 || maxGlobalExposureBps == 0) return 0;
-        uint256 nav = uint256(navWad);
-        uint256 marketLimit = Math.mulDiv(nav, config.maxMarketExposureBps, BPS);
-        uint256 globalLimit = Math.mulDiv(nav, maxGlobalExposureBps, BPS);
-        uint256 marketRoom = marketLimit > m.liability ? marketLimit - m.liability : 0;
-        uint256 globalRoom = globalLimit > total ? globalLimit - total : 0;
-        uint256 room = marketRoom < globalRoom ? marketRoom : globalRoom;
-        if (room == 0) return 0;
-
-        (uint256 spreadBps, uint256 bandBps) = _spreadAndBand(config, m.regime);
-        uint256 inputRoom = _HELPER.grossInputForRoom(
-            room / USDG_TO_WAD, _capacityUsdg(config, navWad), config.feeBps, config.impactBps, spreadBps, bandBps
-        );
-        maxUsdgIn = inputRoom < config.maxTradeUsdg ? inputRoom : config.maxTradeUsdg;
     }
 
     /// @dev Accrues `id`, optionally, and stores fresh utilization for it using one oracle pass over all markets.
