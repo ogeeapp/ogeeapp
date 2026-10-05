@@ -30,8 +30,9 @@ contract MockVault {
         return navWad;
     }
 
-    function pay(address to, uint256 amount, uint8) external {
+    function pay(address to, uint256 amount, uint8) external returns (uint256) {
         if (msg.sender != engine) revert OnlyEngine();
         require(usdg.transfer(to, amount));
+        return amount;
     }
 }

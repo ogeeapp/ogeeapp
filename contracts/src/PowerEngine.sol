@@ -325,14 +325,14 @@ contract PowerEngine is
         int256 navWad = vault.navFor(total, spots);
 
         Quote memory quote = _quoteSell(_configs[id], m, navWad, tokensIn);
-        usdgOut = quote.amountOut;
-        if (usdgOut < minUsdgOut) revert Slippage();
         if (m.regime == Regime.PAUSED) _consumePausedSellCap(id, quote.grossUsdg);
 
         _configs[id].token.burn(msg.sender, tokensIn);
         uint256 vaultShort = state.vaultShort - tokensIn;
         state.vaultShort = uint128(vaultShort);
-        vault.pay(recipient, usdgOut, id);
+        // The vault deducts any hedge-sale execution shortfall, so the seller (not the LPs) bears it.
+        usdgOut = vault.pay(recipient, quote.amountOut, id);
+        if (usdgOut < minUsdgOut) revert Slippage();
         uint256 treasuryFee = Math.mulDiv(quote.fee, protocolFeeShareBps, BPS);
         if (treasuryFee != 0) vault.pay(treasury, treasuryFee, id);
 

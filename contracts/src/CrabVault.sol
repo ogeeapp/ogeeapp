@@ -305,8 +305,9 @@ contract CrabVault is
         Valuation memory v = _valuation();
         uint256 maxAssets = _maxWithdraw(owner, v);
         if (assets > maxAssets) revert ERC4626ExceededMaxWithdraw(owner, assets, maxAssets);
-        shares = _toShares(assets, v.navLow, Math.Rounding.Ceil);
-        _withdrawWith(v, _msgSender(), receiver, owner, assets, shares);
+        (, shares) = _withdrawWith(
+            v, _msgSender(), receiver, owner, assets, _toShares(assets, v.navLow, Math.Rounding.Ceil), true
+        );
     }
 
     /// @notice Redeems CRAB shares after raising cash from configured hedge routes if needed.
@@ -319,19 +320,29 @@ contract CrabVault is
         Valuation memory v = _valuation();
         uint256 maxShares = _maxRedeem(owner, v);
         if (shares > maxShares) revert ERC4626ExceededMaxRedeem(owner, shares, maxShares);
-        assets = _toAssets(shares, v.navLow, Math.Rounding.Floor);
-        _withdrawWith(v, _msgSender(), receiver, owner, assets, shares);
+        (assets,) = _withdrawWith(
+            v, _msgSender(), receiver, owner, _toAssets(shares, v.navLow, Math.Rounding.Floor), shares, false
+        );
     }
 
-    /// @notice Pays USDG to the engine after selling configured hedges when necessary.
-    function pay(address to, uint256 usdgAmount, uint8 preferMarket) external override nonReentrant {
+    /// @notice Pays up to `usdgAmount` USDG for the engine, selling configured hedges when cash is short.
+    /// @dev The execution shortfall of any hedge sale (oracle value minus proceeds) is deducted from the payment, so
+    /// the recipient, not the remaining LPs, bears the swap's price impact. Returns the amount actually paid.
+    function pay(address to, uint256 usdgAmount, uint8 preferMarket)
+        external
+        override
+        nonReentrant
+        returns (uint256 paid)
+    {
         if (msg.sender != address(engine)) revert NotEngine();
         if (to == address(0)) revert InvalidParams();
+        paid = usdgAmount;
         if (usdg.balanceOf(address(this)) < usdgAmount) {
             (, ValuationMark[] memory marks) = engine.valuation();
-            _ensureCash(usdgAmount, preferMarket, marks);
+            uint256 shortfall = _ensureCash(usdgAmount, preferMarket, marks);
+            paid = usdgAmount > shortfall ? usdgAmount - shortfall : 0;
         }
-        usdg.safeTransfer(to, usdgAmount);
+        usdg.safeTransfer(to, paid);
     }
 
     /// @notice Rebalances a market's tracked hedge toward the engine's current delta target.
@@ -405,7 +416,7 @@ contract CrabVault is
         internal
         override
     {
-        _withdrawWith(_valuation(), caller, receiver, owner, assets, shares);
+        _withdrawWith(_valuation(), caller, receiver, owner, assets, shares, true);
     }
 
     /// @dev A transfer carries the sender's remaining lock forward to the recipient. Locked shares may only move to
@@ -421,25 +432,34 @@ contract CrabVault is
         if (senderUnlock > receiverUnlock) lastDeposit[to] = senderUnlock - lockSeconds;
     }
 
-    /// @dev Shares cannot be burned before their owner's latest deposit lock expires.
+    /// @dev Shares cannot be burned before their owner's latest deposit lock expires. If the exit forces a hedge sale,
+    /// its execution shortfall is charged to the exiting holder: extra shares for an exact-assets withdraw
+    /// (`chargeShares`), fewer assets for an exact-shares redeem. Both use the pre-sale exit price.
     function _withdrawWith(
         Valuation memory v,
         address caller,
         address receiver,
         address owner,
         uint256 assets,
-        uint256 shares
-    ) private {
+        uint256 shares,
+        bool chargeShares
+    ) private returns (uint256 paid, uint256 burned) {
         if (unlockTime(owner) > block.timestamp) revert WithdrawalLocked();
-        if (caller != owner) _spendAllowance(owner, caller, shares);
+        paid = assets;
+        burned = shares;
         if (v.cash < assets) {
-            _ensureCash(assets, 0, v.marks);
+            uint256 shortfall = _ensureCash(assets, 0, v.marks);
+            if (shortfall != 0) {
+                if (chargeShares) burned += _toShares(shortfall, v.navLow, Math.Rounding.Ceil);
+                else paid = assets > shortfall ? assets - shortfall : 0;
+            }
             v = _valuation();
         }
-        if (assets > _withdrawableAssets(v)) revert InsufficientLiquidity();
-        _burn(owner, shares);
-        usdg.safeTransfer(receiver, assets);
-        emit Withdraw(caller, receiver, owner, assets, shares);
+        if (caller != owner) _spendAllowance(owner, caller, burned);
+        if (paid > _withdrawableAssets(v)) revert InsufficientLiquidity();
+        _burn(owner, burned);
+        usdg.safeTransfer(receiver, paid);
+        emit Withdraw(caller, receiver, owner, paid, burned);
     }
 
     function _valuation() private view returns (Valuation memory v) {
@@ -561,9 +581,15 @@ contract CrabVault is
         return conservativeLimit < liquidAssets ? conservativeLimit : liquidAssets;
     }
 
-    function _ensureCash(uint256 amount, uint8 preferMarket, ValuationMark[] memory marks) private {
+    /// @dev Sells hedges until cash plus the accumulated execution shortfall covers `amount`. Each sale is sized at
+    /// the oracle value still needed (no gross-up); proceeds below that value are returned as `shortfall` for the
+    /// caller to charge to whoever triggered the sale. Proceeds above it stay with the vault.
+    function _ensureCash(uint256 amount, uint8 preferMarket, ValuationMark[] memory marks)
+        private
+        returns (uint256 shortfall)
+    {
         uint256 count = marks.length;
-        for (uint256 step; usdg.balanceOf(address(this)) < amount && step <= count; ++step) {
+        for (uint256 step; usdg.balanceOf(address(this)) + shortfall < amount && step <= count; ++step) {
             uint8 id;
             if (step == 0) {
                 id = preferMarket;
@@ -579,9 +605,8 @@ contract CrabVault is
             uint256 price = marks[id].spot;
             if (units == 0 || price == 0 || address(adapter) == address(0)) continue;
 
-            uint256 shortfall = amount - usdg.balanceOf(address(this));
-            uint256 grossUnitsNeeded = Math.mulDiv(shortfall, STOCK_VALUE_DENOMINATOR, price, Math.Rounding.Ceil);
-            uint256 unitsNeeded = Math.mulDiv(grossUnitsNeeded, BPS, BPS - maxHedgeSlippageBps, Math.Rounding.Ceil);
+            uint256 need = amount - shortfall - usdg.balanceOf(address(this));
+            uint256 unitsNeeded = Math.mulDiv(need, STOCK_VALUE_DENOMINATOR, price, Math.Rounding.Ceil);
             uint256 unitsToSell = unitsNeeded < units ? unitsNeeded : units;
             if (unitsToSell == 0) continue;
 
@@ -592,10 +617,12 @@ contract CrabVault is
             if (!ok) continue;
             if (sold > units) revert InsufficientLiquidity();
             _hedgeUnits[id] = units - sold;
+            uint256 value = Math.mulDiv(sold, price, STOCK_VALUE_DENOMINATOR, Math.Rounding.Ceil);
+            if (value > received) shortfall += value - received;
             emit CashRaised(id, sold, received);
         }
 
-        if (usdg.balanceOf(address(this)) < amount) revert InsufficientLiquidity();
+        if (usdg.balanceOf(address(this)) + shortfall < amount) revert InsufficientLiquidity();
     }
 
     function _swap(
@@ -633,8 +660,7 @@ contract CrabVault is
         input.forceApprove(address(adapter), amountIn);
         try adapter.swapExactIn(tokenIn, tokenOut, fee, amountIn, minOut, address(this)) returns (uint256 reportedOut) {
             input.forceApprove(address(adapter), 0);
-            (actualIn, actualOut) =
-                _checkSwap(input, output, inputBefore, outputBefore, amountIn, minOut, reportedOut);
+            (actualIn, actualOut) = _checkSwap(input, output, inputBefore, outputBefore, amountIn, minOut, reportedOut);
             ok = true;
         } catch {
             input.forceApprove(address(adapter), 0);

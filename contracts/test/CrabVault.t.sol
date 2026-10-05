@@ -294,11 +294,15 @@ contract CrabVaultTest is Test {
         vault.syncHedgeUnits(0);
         address recipient = makeAddr("recipient");
 
+        int256 navBefore = vault.navView();
         vm.prank(address(engine));
-        vault.pay(recipient, 5 * USDG, 0);
+        uint256 paid = vault.pay(recipient, 5 * USDG, 0);
 
-        assertEq(usdg.balanceOf(recipient), 5 * USDG);
-        assertGt(usdg.balanceOf(address(vault)), 0);
+        // The hedge sale's execution shortfall comes out of the payment, never out of the remaining LPs.
+        assertEq(usdg.balanceOf(recipient), paid);
+        assertLe(paid, 5 * USDG);
+        assertGe(paid, 5 * USDG * 99 / 100);
+        assertGe(vault.navView(), navBefore - int256(5 * USDG * 1e12));
         assertEq(vault.hedgeUnits(0), stock.balanceOf(address(vault)));
         assertEq(usdg.allowance(address(vault), address(adapter)), 0);
         assertEq(stock.allowance(address(vault), address(adapter)), 0);

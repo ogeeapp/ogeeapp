@@ -55,6 +55,7 @@ interface ICrabVault is IERC4626, IAccessControl {
 
     function setNavGuard(uint16 openBps, uint16 closedBps) external;
 
+
     function navGuardOpenBps() external view returns (uint16);
 
     function navGuardClosedBps() external view returns (uint16);
@@ -99,7 +100,7 @@ interface ICrabVault is IERC4626, IAccessControl {
 
     function unlockTime(address account) external view returns (uint256);
 
-    function pay(address to, uint256 usdgAmount, uint8 preferMarket) external;
+    function pay(address to, uint256 usdgAmount, uint8 preferMarket) external returns (uint256 paid);
 
     function rebalance(uint8 id) external returns (int256 unitsDelta);
 
