@@ -90,25 +90,29 @@ contract CrabVaultTest is Test {
         assertEq(vault.unlockTime(alice), originalUnlock);
     }
 
-    function testTransferPropagatesOutstandingLockAndBlocksRedeem() public {
+    function testLockedSharesCannotBeTransferredEvenToAnEmptyAccount() public {
         _deposit(alice, 10 * USDG);
-        uint256 senderUnlock = vault.unlockTime(alice);
         uint256 amount = vault.balanceOf(alice) / 2;
+        address freshPool = makeAddr("freshPool");
 
-        vm.prank(alice);
-        vault.transfer(bob, 0);
-        assertEq(vault.unlockTime(bob), 0);
-
-        vm.prank(alice);
+        vm.startPrank(alice);
+        vm.expectRevert(ICrabVault.WithdrawalLocked.selector);
+        vault.transfer(freshPool, 1);
+        vm.expectRevert(ICrabVault.WithdrawalLocked.selector);
         vault.transfer(bob, amount);
-
-        assertEq(vault.unlockTime(bob), senderUnlock);
-        assertEq(vault.maxWithdraw(bob), 0);
-        assertEq(vault.maxRedeem(bob), 0);
+        vault.approve(bob, amount);
+        vm.stopPrank();
 
         vm.prank(bob);
-        vm.expectRevert();
-        vault.redeem(amount, bob, bob);
+        vm.expectRevert(ICrabVault.WithdrawalLocked.selector);
+        vault.transferFrom(alice, bob, amount);
+        assertEq(vault.unlockTime(freshPool), 0);
+        assertEq(vault.unlockTime(bob), 0);
+
+        vm.warp(vault.unlockTime(alice));
+        vm.prank(alice);
+        vault.transfer(freshPool, 1);
+        assertEq(vault.unlockTime(freshPool), 0);
     }
 
     function testLockedSharesCannotDustAnExistingHolder() public {

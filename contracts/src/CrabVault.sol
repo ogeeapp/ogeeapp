@@ -419,17 +419,11 @@ contract CrabVault is
         _withdrawWith(_valuation(), caller, receiver, owner, assets, shares, true);
     }
 
-    /// @dev A transfer carries the sender's remaining lock forward to the recipient. Locked shares may only move to
-    /// an empty account, so a locked holder cannot extend an existing holder's lock by sending dust.
+    /// @dev Locked shares cannot move, so a lock can neither be escaped nor pushed onto another account (including
+    /// an empty one such as a fresh pool) by a dust transfer. Mints and burns are not transfers.
     function _update(address from, address to, uint256 value) internal override(ERC20Upgradeable) {
-        bool propagate = from != address(0) && to != address(0) && from != to && value != 0;
-        uint256 senderUnlock = propagate ? unlockTime(from) : 0;
-        if (senderUnlock > block.timestamp && balanceOf(to) != 0) revert WithdrawalLocked();
-
+        if (from != address(0) && to != address(0) && unlockTime(from) > block.timestamp) revert WithdrawalLocked();
         super._update(from, to, value);
-        if (senderUnlock <= block.timestamp) return;
-        uint256 receiverUnlock = unlockTime(to);
-        if (senderUnlock > receiverUnlock) lastDeposit[to] = senderUnlock - lockSeconds;
     }
 
     /// @dev Shares cannot be burned before their owner's latest deposit lock expires. If the exit forces a hedge sale,
