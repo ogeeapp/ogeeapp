@@ -91,9 +91,14 @@ function blockTag(params: readonly unknown[] | undefined): string | undefined {
   return undefined;
 }
 
-function cacheLifetime(request: RpcRequest): number | null | undefined {
+const FEE_METHODS = new Set(["eth_gasPrice", "eth_maxPriorityFeePerGas", "eth_feeHistory"]);
+
+function cacheLifetime(callClass: RpcCallClass, request: RpcRequest): number | null | undefined {
   const { method, params } = request;
   if (NO_DEDUPE_METHODS.has(method)) return undefined;
+  // Transactions must be priced from a fresh fee read: a stale cached price
+  // gets broadcasts rejected after a base-fee rise.
+  if (FEE_METHODS.has(method)) return callClass === "tx" ? undefined : 5_000;
 
   if (method === "eth_chainId" || method === "eth_getBlockByHash") return null;
   if (method === "eth_getCode") {
@@ -117,7 +122,6 @@ function cacheLifetime(request: RpcRequest): number | null | undefined {
     return undefined;
   }
   if (method === "eth_blockNumber") return 1_000;
-  if (method === "eth_gasPrice" || method === "eth_maxPriorityFeePerGas") return 5 * 60_000;
   return undefined;
 }
 
@@ -336,7 +340,7 @@ export class RpcPool {
 
   async request(callClass: RpcCallClass, request: RpcRequest): Promise<unknown> {
     this.resetDailyCountersIfNeeded();
-    const lifetime = cacheLifetime(request);
+    const lifetime = cacheLifetime(callClass, request);
     const key = cacheKey(request);
     if (lifetime !== undefined) {
       const cached = this.cache.get(key);
