@@ -161,11 +161,11 @@ abstract contract OgeeScript is Script {
         d.engine = 0x24C07e3b2FfCEE19D9c303c45f1fff4E42fc8E3C;
         d.vault = 0x62e10868275CD724cd623e80820e5a895cCeC618;
         d.marketHours = 0xC302aD192Ea10c58a503A00E3B5b5C4D76eE4989;
-        d.lens = 0x616E558A5b4C388e1be8592980ca95A24D36Ee05;
+        d.lens = 0x7145580db1e422Af7277B7C4ac36788b04866721;
         d.hedgeAdapter = 0x97F436673758f156eb68481687A60C76f24a1f93;
         d.usdg = 0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168;
-        d.engineImpl = 0xD4B1FC5471bC28dC4Fb1e2B6A8E635B3312E8dD4;
-        d.vaultImpl = 0x43BFcb5dAdA427FC40e2b97454a31783204e76d0;
+        d.engineImpl = 0x9Ec41A37d4150dE5Ba227289c08d2aF04a71B620;
+        d.vaultImpl = 0xBD782B6e180a1c5ffd344004A14f3B601e0d5447;
         d.marketHoursImpl = 0x2dFFC40B5FA09a584C057D16426B1952AD69865C;
         d.deployBlock = 78_474_037;
 

@@ -29,19 +29,20 @@ app/         Bun services: API, indexer, keeper, migrations
 
 ### Mainnet deployment
 
-Robinhood Chain mainnet (chain ID `4663`), deployed at block `78474037`. All contracts below are verified on [Sourcify](https://sourcify.dev) (full match). Explorer: [robinhoodchain.blockscout.com](https://robinhoodchain.blockscout.com).
+Robinhood Chain mainnet (chain ID `4663`), deployed at block `78474037`; engine and vault upgraded at block `80776543` (implementations below). All contracts below are verified on [Sourcify](https://sourcify.dev) (full match). Explorer: [robinhoodchain.blockscout.com](https://robinhoodchain.blockscout.com).
 
 | Contract | Address |
 | --- | --- |
 | `PowerEngine` (proxy) | [`0x24C07e3b2FfCEE19D9c303c45f1fff4E42fc8E3C`](https://robinhoodchain.blockscout.com/address/0x24C07e3b2FfCEE19D9c303c45f1fff4E42fc8E3C) |
 | `CrabVault` (proxy) | [`0x62e10868275CD724cd623e80820e5a895cCeC618`](https://robinhoodchain.blockscout.com/address/0x62e10868275CD724cd623e80820e5a895cCeC618) |
 | `MarketHours` (proxy) | [`0xC302aD192Ea10c58a503A00E3B5b5C4D76eE4989`](https://robinhoodchain.blockscout.com/address/0xC302aD192Ea10c58a503A00E3B5b5C4D76eE4989) |
-| `OgeeLens` | [`0x616E558A5b4C388e1be8592980ca95A24D36Ee05`](https://robinhoodchain.blockscout.com/address/0x616E558A5b4C388e1be8592980ca95A24D36Ee05) |
+| `OgeeLens` | [`0x7145580db1e422Af7277B7C4ac36788b04866721`](https://robinhoodchain.blockscout.com/address/0x7145580db1e422Af7277B7C4ac36788b04866721) |
+| `UniswapV3TwapReference` | [`0x757DE9cFa7e524234291454066fB8BeCEc845Ed4`](https://robinhoodchain.blockscout.com/address/0x757DE9cFa7e524234291454066fB8BeCEc845Ed4) |
 | `UniswapV3HedgeAdapter` | [`0x97F436673758f156eb68481687A60C76f24a1f93`](https://robinhoodchain.blockscout.com/address/0x97F436673758f156eb68481687A60C76f24a1f93) |
-| `PowerTokenFactory` | [`0xe0a654BC07c4FB87B6e8E54B4e17E0238C25bdbb`](https://robinhoodchain.blockscout.com/address/0xe0a654BC07c4FB87B6e8E54B4e17E0238C25bdbb) |
-| `EngineHelper` | [`0xe8F2c080D6bf48A2c8b6A24A7539524Bef5eBE88`](https://robinhoodchain.blockscout.com/address/0xe8F2c080D6bf48A2c8b6A24A7539524Bef5eBE88) |
-| `PowerEngine` (implementation) | [`0xD4B1FC5471bC28dC4Fb1e2B6A8E635B3312E8dD4`](https://robinhoodchain.blockscout.com/address/0xD4B1FC5471bC28dC4Fb1e2B6A8E635B3312E8dD4) |
-| `CrabVault` (implementation) | [`0x43BFcb5dAdA427FC40e2b97454a31783204e76d0`](https://robinhoodchain.blockscout.com/address/0x43BFcb5dAdA427FC40e2b97454a31783204e76d0) |
+| `PowerTokenFactory` | [`0x168045A031ecF2227f746292b32948fbdBdd9430`](https://robinhoodchain.blockscout.com/address/0x168045A031ecF2227f746292b32948fbdBdd9430) |
+| `EngineHelper` | [`0xEbd0931e56363bde8b741dD06F9345D7dC7C4960`](https://robinhoodchain.blockscout.com/address/0xEbd0931e56363bde8b741dD06F9345D7dC7C4960) |
+| `PowerEngine` (implementation) | [`0x9Ec41A37d4150dE5Ba227289c08d2aF04a71B620`](https://robinhoodchain.blockscout.com/address/0x9Ec41A37d4150dE5Ba227289c08d2aF04a71B620) |
+| `CrabVault` (implementation) | [`0xBD782B6e180a1c5ffd344004A14f3B601e0d5447`](https://robinhoodchain.blockscout.com/address/0xBD782B6e180a1c5ffd344004A14f3B601e0d5447) |
 | `MarketHours` (implementation) | [`0x2dFFC40B5FA09a584C057D16426B1952AD69865C`](https://robinhoodchain.blockscout.com/address/0x2dFFC40B5FA09a584C057D16426B1952AD69865C) |
 | USDG (collateral) | [`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`](https://robinhoodchain.blockscout.com/address/0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168) |
 
