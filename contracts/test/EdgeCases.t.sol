@@ -67,6 +67,77 @@ contract EdgeCasesTest is SystemFixture {
         engine.buy(1, 10 * USDG, 0, trader, type(uint256).max);
     }
 
+    /// A rally pushes a capped market's liability past its capacity while NAV stays positive: stored utilization
+    /// clamps at 100% and open carry sits at its maximum.
+    function testUtilizationClampsAfterRallyPastCapacity() public {
+        (,,, uint256 maxIn) = engine.quoteBuy(0, USDG);
+        _buy(0, maxIn * 99 / 100);
+        feeds[0].setAnswer(115e8); // liability x1.32, beyond the 40% market capacity
+        assertGt(vault.navView(), 0);
+        engine.accrueAll();
+        assertEq(engine.getState(0).lastUtilBps, 10_000);
+        assertEq(engine.currentCarryWad(0), 5e15, "carry at max");
+    }
+
+    /// Book where LP exits need a forced hedge sale: two LPs, a hedged power position (150% hedge ratio), locks
+    /// expired, fresh feed rounds, and the pool `poolDeviationBps` away from the oracle.
+    function _cashShortBook(int256 poolDeviationBps) internal returns (address lp2) {
+        lp2 = makeAddr("lp2");
+        usdg.mint(lp2, 500_000 * USDG);
+        vm.startPrank(lp2);
+        usdg.approve(address(vault), type(uint256).max);
+        vault.deposit(500_000 * USDG, lp2);
+        vm.stopPrank();
+        vault.setParams(1 days, 1_000, 15_000, 1_000, 100, uint128(2 * USDG), uint128(1_000_000_000 * USDG));
+        _buy(0, 380_000 * USDG);
+        vm.prank(KEEPER);
+        vault.rebalance(0);
+        vm.warp(vm.getBlockTimestamp() + 1 days + 1);
+        feeds[0].setAnswer(100e8);
+        feeds[1].setAnswer(250e8);
+        _arbPool(0, poolDeviationBps);
+    }
+
+    /// An exact-shares redeem that forces a hedge sale below the oracle value pays the redeemer less (the execution
+    /// shortfall), so the remaining LP's share value does not fall.
+    function testRedeemChargesHedgeSaleShortfallToRedeemer() public {
+        address lp2 = _cashShortBook(-50); // pool 0.5% under the oracle, inside the 1% slippage limit
+        uint256 cash = usdg.balanceOf(address(vault));
+        uint256 shares = vault.previewWithdraw(cash + 100_000 * USDG);
+        if (shares > vault.maxRedeem(lp)) shares = vault.maxRedeem(lp);
+        uint256 quoted = vault.previewRedeem(shares);
+        assertGt(quoted, cash, "redeem needs a cash raise");
+        uint256 pps = vault.navPerShareWad();
+        uint256 lp2Value = vault.convertToAssets(vault.balanceOf(lp2));
+        vm.prank(lp);
+        uint256 paid = vault.redeem(shares, lp, lp);
+        assertLt(paid, quoted, "shortfall not charged");
+        assertGe(vault.navPerShareWad(), pps, "remaining LPs paid the shortfall");
+        assertGe(vault.convertToAssets(vault.balanceOf(lp2)), lp2Value);
+    }
+
+    /// FINDING (open): an exact-assets withdraw that needs a forced hedge sale reverts whenever the sale fills below
+    /// the oracle value, which a 5 bps pool fee alone guarantees. `_ensureCash` stops once cash + shortfall covers
+    /// `assets`, then `_withdrawWith` (chargeShares) still transfers the full `assets` from cash that is `shortfall`
+    /// short, so the transfer reverts and the shortfall-in-shares charge is unreachable. `maxWithdraw` advertises the
+    /// amount; `redeem` works (see above). When fixed, assert the withdraw succeeds, burns more than
+    /// previewWithdraw, and keeps the other LP's value.
+    function testFindingExactAssetWithdrawNeedingCashRaiseReverts() public {
+        _cashShortBook(0); // pool exactly at the oracle: the fee alone makes the sale fill short
+        uint256 cash = usdg.balanceOf(address(vault));
+        uint256 maxAssets = vault.maxWithdraw(lp);
+        uint256 assets = cash + 100_000 * USDG < maxAssets ? cash + 100_000 * USDG : maxAssets;
+        assertGt(assets, cash, "withdraw needs a cash raise");
+        vm.prank(lp);
+        vm.expectRevert(); // ERC20InsufficientBalance(vault, cash after sale, assets)
+        vault.withdraw(assets, lp, lp);
+        // The same exit as an exact-shares redeem goes through.
+        uint256 shares = vault.previewWithdraw(assets);
+        if (shares > vault.maxRedeem(lp)) shares = vault.maxRedeem(lp);
+        vm.prank(lp);
+        assertGt(vault.redeem(shares, lp, lp), cash);
+    }
+
     function testDepositCapAndMintCap() public {
         vault.setParams(1 days, 1_000, 10_000, 1_000, 100, uint128(2 * USDG), uint128(1_000_000 * USDG));
         assertEq(vault.maxDeposit(lp), 0, "cap reached");

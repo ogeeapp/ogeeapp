@@ -201,6 +201,18 @@ contract EnginePricingFuzzTest is PowerEngineFixture {
         assertEq(engine.getState(0).normFactor, nf2, "stored != projected");
     }
 
+    /// @notice Decay just short of 100% still floors at MIN_NORM_FACTOR (the fuzzer rarely lands in that sliver).
+    function testNormFactorFloorsJustBelowFullDecay() public {
+        MarketConfig memory c = _config();
+        c.offHoursCarryWad = int64(int256(WAD - 1)); // one day decays all but 1e-18
+        _setConfig(c);
+        marketHours.setOpen(false);
+        vm.warp(_now() + 1 days);
+        assertEq(engine.currentNormFactor(0), MIN_NORM_FACTOR);
+        engine.accrue(0);
+        assertEq(engine.getState(0).normFactor, MIN_NORM_FACTOR);
+    }
+
     function _expectedNorm(uint256 nf0, uint256 carry, uint256 elapsed) internal pure returns (uint256) {
         if (elapsed > 7 days) elapsed = 7 days;
         if (elapsed == 0 || carry == 0) return nf0;
