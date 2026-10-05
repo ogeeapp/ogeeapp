@@ -39,6 +39,7 @@ export interface IndexerMetadata {
   chainTimeObservedAt?: string;
   lagBlocks?: number | string;
   pendingSnapshot?: boolean;
+  lastSnapshotAt?: string;
   registrySyncPending?: boolean;
   indexerLastOk?: string;
   indexerLastError?: string | null;

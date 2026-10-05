@@ -1,7 +1,25 @@
 import { encodeFunctionData } from "viem";
 import { CrabVaultAbi as crabVaultAbi } from "../../abi/CrabVault";
 import { safeErrorSummary } from "../../log";
-import type { KeeperContext } from "../context";
+import type { IndexerMetadata, KeeperContext } from "../context";
+
+// The hedge target comes from indexer snapshots. Snapshots run on every trade
+// or oracle update and at least every ten minutes, so anything older means the
+// indexer is stuck and the target cannot be trusted.
+export const HEDGE_MAX_SNAPSHOT_AGE_MS = 15 * 60_000;
+export const HEDGE_MAX_INDEXER_SILENCE_MS = 5 * 60_000;
+const HEDGE_MAX_LAG_BLOCKS = 60;
+
+/** Why indexed hedge data is unusable right now, or undefined when it is fresh. */
+export function hedgeDataStaleness(metadata: IndexerMetadata, now = Date.now()): string | undefined {
+  const lastOk = Date.parse(metadata.indexerLastOk ?? "");
+  if (!Number.isFinite(lastOk) || now - lastOk > HEDGE_MAX_INDEXER_SILENCE_MS) return "indexer has not reported a successful poll recently";
+  const snapshotAt = Date.parse(metadata.lastSnapshotAt ?? "");
+  if (!Number.isFinite(snapshotAt) || now - snapshotAt > HEDGE_MAX_SNAPSHOT_AGE_MS) return "latest indexer snapshot is too old";
+  const lag = Number(metadata.lagBlocks ?? 0);
+  if (!Number.isFinite(lag) || lag > HEDGE_MAX_LAG_BLOCKS) return "indexer is lagging the chain head";
+  return undefined;
+}
 
 export function createHedgeJob(context: KeeperContext) {
   const lastAttempt = new Map<number, number>();
@@ -9,6 +27,11 @@ export function createHedgeJob(context: KeeperContext) {
     const metadata = await context.metadata();
     const settings = metadata.vaultConfig;
     if (!settings) throw new Error("Waiting for indexed vault configuration");
+    const stale = hedgeDataStaleness(metadata);
+    if (stale) {
+      context.logger.warn({ reason: stale }, "Hedge skipped: indexed hedge targets are stale");
+      return { attempted: [], skipped: stale, retryAfterMs: 60_000 };
+    }
     const ticks = await context.sql<{ market_id: number; spot: string; hedge_units: string; hedge_target: string; regime: number }[]>`
       select distinct on (market_id) market_id, spot, hedge_units, hedge_target, regime from ticks order by market_id, ts desc`;
     const attempted: number[] = [];
