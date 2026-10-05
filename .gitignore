@@ -49,4 +49,3 @@ coverage/
 *.sqlite*
 .DS_Store
 lcov.info
-coverage/
