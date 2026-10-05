@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {console2} from "forge-std/console2.sol";
 import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
 import {CrabVault} from "../src/CrabVault.sol";
+import {OgeeLens} from "../src/OgeeLens.sol";
 import {PowerEngine} from "../src/PowerEngine.sol";
 import {UniswapV3TwapReference, IUniswapV3FactoryLike} from "../src/UniswapV3TwapReference.sol";
 import {IAggregatorV3} from "../src/interfaces/IAggregatorV3.sol";
@@ -67,6 +68,7 @@ contract UpgradeV2 is OgeeScript {
         address newEngineImpl;
         address newVaultImpl;
         address twap;
+        address lens;
         address oldEngineImpl;
         address oldVaultImpl;
     }
@@ -139,6 +141,8 @@ contract UpgradeV2 is OgeeScript {
         _p.newEngineImpl = vm.envOr("NEW_ENGINE_IMPL", address(0));
         _p.newVaultImpl = vm.envOr("NEW_VAULT_IMPL", address(0));
         _p.twap = vm.envOr("TWAP_REFERENCE", address(0));
+        // The lens is stateless and ownerless; a fresh one keeps the deployed lens identical to this source.
+        _p.lens = vm.envOr("NEW_LENS", address(0));
 
         console2.log("== UpgradeV2 mode", _p.mode, "chain", block.chainid);
         console2.log("  engine", _p.engine, "impl", _p.oldEngineImpl);
@@ -148,14 +152,15 @@ contract UpgradeV2 is OgeeScript {
         console2.log("  sequencerFeed", _p.sequencerFeed);
     }
 
-    /// @dev Deploys what was not supplied through NEW_ENGINE_IMPL / NEW_VAULT_IMPL / TWAP_REFERENCE. Must run inside a
-    /// broadcast.
+    /// @dev Deploys what was not supplied through NEW_ENGINE_IMPL / NEW_VAULT_IMPL / TWAP_REFERENCE / NEW_LENS (the lens
+    /// is skipped with DEPLOY_LENS=0). Must run inside a broadcast.
     function _deploy() private {
         if (_p.newEngineImpl == address(0)) _p.newEngineImpl = address(new PowerEngine());
         if (_p.newVaultImpl == address(0)) _p.newVaultImpl = address(new CrabVault());
         if (_p.twap == address(0)) {
             _p.twap = address(new UniswapV3TwapReference(IUniswapV3FactoryLike(_p.factory), _p.usdg, _p.window));
         }
+        if (_p.lens == address(0) && vm.envOr("DEPLOY_LENS", true)) _p.lens = address(new OgeeLens());
     }
 
     function _validateDeployed() private view {
@@ -171,6 +176,11 @@ contract UpgradeV2 is OgeeScript {
         console2.log("  new engine impl", _p.newEngineImpl);
         console2.log("  new vault impl ", _p.newVaultImpl);
         console2.log("  twap reference ", _p.twap);
+        if (_p.lens != address(0)) {
+            require(_p.lens.code.length != 0, "UpgradeV2: lens has no code");
+            // Point the deployment file (contracts.lens), the API config and the README at this address.
+            console2.log("  new lens       ", _p.lens);
+        }
     }
 
     function _requireImpl(address impl, string memory name) private view {

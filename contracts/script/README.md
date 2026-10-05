@@ -123,6 +123,7 @@ every config field except `offHoursBuyMaxAge` must be unchanged.
 | `MIN_OBSERVATION_CARDINALITY` | `TWAP_WINDOW + 1` | Pools below this are logged |
 | `INCREASE_CARDINALITY` | `false` | Also call `increaseObservationCardinalityNext` on those pools (permissionless, sender pays gas) |
 | `NEW_ENGINE_IMPL` / `NEW_VAULT_IMPL` / `TWAP_REFERENCE` | unset | Reuse already-deployed contracts instead of deploying |
+| `NEW_LENS` / `DEPLOY_LENS` | unset / `1` | Reuse a deployed `OgeeLens`, or skip deploying a fresh one. The lens source changed after the first deployment (same behaviour), so a fresh lens keeps the deployed bytecode matching the repo; point `contracts.lens` in the deployment file, the API config and the README at it |
 | `TIMELOCK` | required in timelock mode | The `TimelockController` holding `DEFAULT_ADMIN_ROLE` |
 | `TIMELOCK_DELAY` / `TIMELOCK_SALT` / `TIMELOCK_PREDECESSOR` | min delay / derived / zero | Batch parameters |
 | `SAFE` | unset | Proposer used for the local batch simulation |
