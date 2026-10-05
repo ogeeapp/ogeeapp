@@ -40,7 +40,6 @@ function snapshotDue(state: IndexerState): boolean {
     || (state.pendingAccountSnapshots.size > 0 && sinceLast >= ACCOUNT_BACKLOG_SNAPSHOT_MS);
 }
 const ACTIVE_EVENT_MS = 2 * 60_000;
-const USER_ACTIVITY_MS = 60_000;
 const IDLE_AFTER_MS = 30 * 60_000;
 
 export interface IndexerState {
@@ -683,16 +682,6 @@ async function maybeResolveAggregators(state: IndexerState, head: bigint, force:
   }
 }
 
-async function lastApiActivity(sql: Sql): Promise<number> {
-  const rows = (await sql`
-    SELECT meta->>'lastUserActivity' AS activity
-    FROM keeper_status
-    WHERE job = 'api'
-    LIMIT 1
-  `) as { activity?: string | null }[];
-  return rows[0]?.activity ? Date.parse(rows[0].activity) : 0;
-}
-
 async function allMarketsOffHours(sql: Sql): Promise<boolean> {
   const rows = (await sql`
     SELECT
@@ -709,8 +698,9 @@ async function allMarketsOffHours(sql: Sql): Promise<boolean> {
 
 export async function nextPollDelay(state: IndexerState): Promise<number> {
   const now = Date.now();
-  const apiActivity = await lastApiActivity(state.sql);
-  if (now - state.lastOgeeEventAt < ACTIVE_EVENT_MS || (apiActivity > 0 && now - apiActivity < USER_ACTIVITY_MS)) {
+  // Poll cadence follows on-chain activity only; public API traffic must not
+  // be able to drive indexer (and RPC) load.
+  if (now - state.lastOgeeEventAt < ACTIVE_EVENT_MS) {
     return state.config.INDEXER_POLL_ACTIVE_MS;
   }
   if (now - state.lastEventAt >= IDLE_AFTER_MS && await allMarketsOffHours(state.sql)) {

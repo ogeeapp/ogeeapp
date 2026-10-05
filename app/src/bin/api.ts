@@ -9,7 +9,8 @@ const config = loadConfig();
 const logger = createLogger(config.LOG_LEVEL, "api");
 const deployment = await loadDeployment(config.DEPLOYMENT_FILE);
 assertDeploymentNetwork(deployment, config);
-const { sql } = createDbClient(config);
+// The API only reads: its sessions are read-only at the database level.
+const { sql } = createDbClient(config, { readOnly: true });
 const app = createApiApp({ sql, config, deployment, logger, cache: new TtlCache() });
 
 const server = Bun.serve({
