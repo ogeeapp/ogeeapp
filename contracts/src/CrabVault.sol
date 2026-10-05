@@ -519,12 +519,22 @@ contract CrabVault is
         return navWad > 0 ? uint256(navWad) / USDG_TO_WAD : 0;
     }
 
+    /// @dev NAV is converted to USDG units against the caller: rounded up when it prices shares received (floor) and
+    /// down when it prices shares burned (ceil).
     function _toShares(uint256 assets, int256 navWad, Math.Rounding rounding) private view returns (uint256) {
-        return assets.mulDiv(totalSupply() + 10 ** _decimalsOffset(), _assetsOf(navWad) + 1, rounding);
+        uint256 nav = _navAssets(navWad, rounding == Math.Rounding.Floor);
+        return assets.mulDiv(totalSupply() + 10 ** _decimalsOffset(), nav + 1, rounding);
     }
 
+    /// @dev NAV is rounded up when it prices assets paid in (ceil) and down when it prices assets paid out (floor).
     function _toAssets(uint256 shares, int256 navWad, Math.Rounding rounding) private view returns (uint256) {
-        return shares.mulDiv(_assetsOf(navWad) + 1, totalSupply() + 10 ** _decimalsOffset(), rounding);
+        uint256 nav = _navAssets(navWad, rounding == Math.Rounding.Ceil);
+        return shares.mulDiv(nav + 1, totalSupply() + 10 ** _decimalsOffset(), rounding);
+    }
+
+    function _navAssets(int256 navWad, bool roundUp) private pure returns (uint256) {
+        if (navWad <= 0) return 0;
+        return roundUp ? Math.ceilDiv(uint256(navWad), USDG_TO_WAD) : uint256(navWad) / USDG_TO_WAD;
     }
 
     function _maxDeposit(address receiver, Valuation memory v) private view returns (uint256) {
