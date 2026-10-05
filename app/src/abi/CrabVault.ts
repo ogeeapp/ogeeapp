@@ -662,7 +662,13 @@ export const CrabVaultAbi = [
         "internalType": "uint8"
       }
     ],
-    "outputs": [],
+    "outputs": [
+      {
+        "name": "paid",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
     "stateMutability": "nonpayable"
   },
   {
@@ -737,6 +743,19 @@ export const CrabVaultAbi = [
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "priceReference",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IPriceReference"
       }
     ],
     "stateMutability": "view"
@@ -985,6 +1004,19 @@ export const CrabVaultAbi = [
         "name": "maxTotalDeposits_",
         "type": "uint128",
         "internalType": "uint128"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setPriceReference",
+    "inputs": [
+      {
+        "name": "ref",
+        "type": "address",
+        "internalType": "contract IPriceReference"
       }
     ],
     "outputs": [],
@@ -1464,6 +1496,19 @@ export const CrabVaultAbi = [
         "type": "uint128",
         "indexed": false,
         "internalType": "uint128"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PriceReferenceUpdated",
+    "inputs": [
+      {
+        "name": "ref",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
       }
     ],
     "anonymous": false

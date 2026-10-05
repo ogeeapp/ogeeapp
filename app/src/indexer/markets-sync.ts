@@ -85,7 +85,7 @@ function normalizeMarketConfig(value: unknown): Record<string, unknown> {
     maxAgeOffHours: asNumber(get("maxAgeOffHours", 22)),
     kind: asNumber(get("kind", 23)),
     feed2: typeof get("feed2", 24) === "string" ? String(get("feed2", 24)).toLowerCase() : "0x0000000000000000000000000000000000000000",
-    reserved: asBigInt(get("reserved", 25)).toString(),
+    offHoursBuyMaxAge: asNumber(get("offHoursBuyMaxAge", 25)),
   };
 }
 

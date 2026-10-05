@@ -392,7 +392,7 @@ export const PowerEngineAbi = [
             "internalType": "address"
           },
           {
-            "name": "reserved",
+            "name": "offHoursBuyMaxAge",
             "type": "uint64",
             "internalType": "uint64"
           }
@@ -786,7 +786,7 @@ export const PowerEngineAbi = [
             "internalType": "address"
           },
           {
-            "name": "reserved",
+            "name": "offHoursBuyMaxAge",
             "type": "uint64",
             "internalType": "uint64"
           }
@@ -1279,7 +1279,7 @@ export const PowerEngineAbi = [
             "internalType": "address"
           },
           {
-            "name": "reserved",
+            "name": "offHoursBuyMaxAge",
             "type": "uint64",
             "internalType": "uint64"
           }
