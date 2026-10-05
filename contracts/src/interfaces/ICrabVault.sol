@@ -5,6 +5,7 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IHedgeAdapter} from "./IHedgeAdapter.sol";
+import {IPriceReference} from "./IPriceReference.sol";
 import {IPowerEngine} from "./IPowerEngine.sol";
 
 interface ICrabVault is IERC4626, IAccessControl {
@@ -38,6 +39,7 @@ interface ICrabVault is IERC4626, IAccessControl {
     event CashRaised(uint8 indexed id, uint256 stockSold, uint256 usdgOut);
     event HedgeUnitsSynced(uint8 indexed id, uint256 hedgeUnits);
     event NavGuardUpdated(uint16 openBps, uint16 closedBps);
+    event PriceReferenceUpdated(address indexed ref);
 
     function KEEPER_ROLE() external view returns (bytes32);
 
@@ -55,6 +57,9 @@ interface ICrabVault is IERC4626, IAccessControl {
 
     function setNavGuard(uint16 openBps, uint16 closedBps) external;
 
+    function setPriceReference(IPriceReference ref) external;
+
+    function priceReference() external view returns (IPriceReference);
 
     function navGuardOpenBps() external view returns (uint16);
 

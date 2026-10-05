@@ -14,6 +14,7 @@ import {ReentrancyGuardTransientUpgradeable} from
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {ICrabVault} from "./interfaces/ICrabVault.sol";
 import {IHedgeAdapter} from "./interfaces/IHedgeAdapter.sol";
+import {IPriceReference} from "./interfaces/IPriceReference.sol";
 import {IPowerEngine} from "./interfaces/IPowerEngine.sol";
 import {Regime, ValuationMark} from "./libs/OgeeTypes.sol";
 import {Roles} from "./libs/Roles.sol";
@@ -73,6 +74,8 @@ contract CrabVault is
     mapping(uint8 id => IHedgeAdapter adapter) private _hedgeAdapters;
     mapping(uint8 id => uint24 fee) private _poolFees;
     mapping(uint8 id => address stock) private _stocks;
+    /// @notice TWAP source that floors forced hedge sales (zero = oracle-only floor). Appended from the gap.
+    IPriceReference public override priceReference;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -187,6 +190,13 @@ contract CrabVault is
         navGuardOpenBps = openBps;
         navGuardClosedBps = closedBps;
         emit NavGuardUpdated(openBps, closedBps);
+    }
+
+    /// @notice Sets the TWAP source that floors forced hedge sales; zero disables it (oracle-only floor).
+    function setPriceReference(IPriceReference ref) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (address(ref) != address(0) && address(ref).code.length == 0) revert InvalidParams();
+        priceReference = ref;
+        emit PriceReferenceUpdated(address(ref));
     }
 
     /// @notice Configures the adapter and pool fee for a listed market.
@@ -596,7 +606,7 @@ contract CrabVault is
             if (id >= count) continue;
             uint256 units = _hedgeUnits[id];
             IHedgeAdapter adapter = _hedgeAdapters[id];
-            uint256 price = marks[id].spot;
+            uint256 price = _salePrice(id, marks[id].spot);
             if (units == 0 || price == 0 || address(adapter) == address(0)) continue;
 
             uint256 need = amount - shortfall - usdg.balanceOf(address(this));
@@ -617,6 +627,18 @@ contract CrabVault is
         }
 
         if (usdg.balanceOf(address(this)) + shortfall < amount) revert InsufficientLiquidity();
+    }
+
+    /// @dev Reference price for a forced hedge sale: the higher of the regime spot and the pool TWAP. A held
+    /// off-hours close below a repriced pool would otherwise let a sandwich take the difference from the LPs.
+    function _salePrice(uint8 id, uint256 spot) private view returns (uint256) {
+        IPriceReference ref = priceReference;
+        if (address(ref) == address(0) || spot == 0) return spot;
+        try ref.referencePrice(_stocks[id], _poolFees[id]) returns (uint256 twap) {
+            return twap > spot ? twap : spot;
+        } catch {
+            return spot;
+        }
     }
 
     function _swap(
@@ -699,5 +721,5 @@ contract CrabVault is
 
     function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
-    uint256[39] private __gap;
+    uint256[38] private __gap;
 }
