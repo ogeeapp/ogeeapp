@@ -1,0 +1,35 @@
+name: live-check
+
+# Read-only check of the live Robinhood Chain deployment (implementations, roles, wiring, bounds, feeds, hedge
+# routes, TWAP pools). Nothing is signed or broadcast. Fails the run on any FAIL line.
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  post-deploy-check:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.8.1
+      - name: Post-deploy check
+        env:
+          RPC_URL: ${{ secrets.RPC_URL || 'https://rpc.mainnet.chain.robinhood.com' }}
+          ADMIN: ${{ vars.OGEE_ADMIN }}
+          KEEPER: ${{ vars.OGEE_KEEPER }}
+          TIMELOCK: ${{ vars.OGEE_TIMELOCK }}
+          SAFE: ${{ vars.OGEE_SAFE }}
+          # No Chainlink sequencer uptime feed exists for Robinhood Chain yet; report it as a warning.
+          ALLOW_UNSET_SEQUENCER_FEED: "1"
+        run: forge script script/PostDeployCheck.s.sol --rpc-url "$RPC_URL"
