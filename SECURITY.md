@@ -114,7 +114,9 @@ or sentinel values, locals that are intentionally zero-initialised, reentrancy o
 Contracts are built with solc 0.8.28, via-IR, 200 optimizer runs, EVM `cancun`, `bytecode_hash = "ipfs"`
 (`contracts/foundry.toml`), OpenZeppelin v5.4.0 and forge-std v1.9.7 vendored in `contracts/lib`. All mainnet
 contracts are verified on Sourcify (full match). For unchanged contracts, a local `forge build` reproduces the deployed
-runtime code byte for byte except for immutables (own address, router) and the metadata trailer.
+runtime code byte for byte except for immutables (own address, router) and the metadata trailer. `OgeeLens` is the exception: its
+source was restructured after deployment (same behaviour, verified field by field in tests), and the upgrade script
+deploys a fresh lens so the live one matches this repository again.
 
 ## Audit history
 
