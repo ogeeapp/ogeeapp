@@ -13,7 +13,9 @@ export const healthResponseSchema = z.object({
   lastIndexedBlock: z.number().int().nonnegative().nullable(),
   headBlock: z.number().int().nonnegative().nullable(),
   lagBlocks: z.number().int().nonnegative().nullable(),
-  keeper: z.record(z.string(), z.object({ lastOk: isoDateTime.nullable(), lastError: z.string().nullable() })),
+  keeper: z.record(z.string(), z.object({
+    status: z.enum(["ok", "error", "pending"]), lastOk: isoDateTime.nullable(), lastRun: isoDateTime.nullable(),
+  })),
   rpc: z.object({ date: z.string().nullable(), keys: z.array(z.object({
     id: z.string(), requestsToday: z.number().int().nonnegative(), estimatedCuToday: z.number().int().nonnegative(), cooling: z.boolean(),
   })) }),

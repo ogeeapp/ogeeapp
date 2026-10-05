@@ -19,7 +19,7 @@ export function registerHealthRoutes(app: OpenAPIHono, deps: ApiDependencies): v
       return context.json(await healthResponse(deps), 200);
     } catch (error) {
       deps.logger.warn({ err: safeErrorSummary(error) }, "Health query failed");
-      return context.json(databaseDownHealth(error), 200);
+      return context.json(databaseDownHealth(), 200);
     }
   });
 }

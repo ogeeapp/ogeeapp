@@ -71,9 +71,11 @@ export async function healthResponse(deps: ApiDependencies) {
   const indexerMeta = jsonRecord(indexer?.meta);
   const keeper = Object.fromEntries(statuses
     .filter((row) => row.job !== "indexer" && row.job !== "api")
+    // Coarse status only: raw job errors can carry RPC/node details and stay in logs.
     .map((row) => [row.job, {
+      status: row.last_error ? "error" as const : dateValue(row.last_ok) ? "ok" as const : "pending" as const,
       lastOk: dateValue(row.last_ok)?.toISOString() ?? null,
-      lastError: row.last_error ? safeErrorSummary(new Error(row.last_error)).message : null,
+      lastRun: dateValue(row.last_run)?.toISOString() ?? null,
     }]));
   const indexed = optionalBlock(indexerMeta.lastIndexedBlock ?? cursor?.block);
   const head = optionalBlock(indexerMeta.lastHeadBlock ?? indexerMeta.headBlock);
@@ -81,9 +83,7 @@ export async function healthResponse(deps: ApiDependencies) {
   const warnings: string[] = [];
   if (lag !== null && lag > 60) warnings.push(`Indexer is ${lag} blocks behind.`);
   const nowMs = Date.now();
-  if (indexer?.last_error) {
-    warnings.push(`Indexer processing failed: ${safeErrorSummary(new Error(indexer.last_error)).message}`);
-  }
+  if (indexer?.last_error) warnings.push("Indexer processing failed.");
   const indexerLastOk = dateValue(indexer?.last_ok);
   if (!indexerLastOk) warnings.push("Indexer has not completed initial synchronization.");
   else if (nowMs - indexerLastOk.getTime() > Math.max(60_000, 3 * deps.config.INDEXER_POLL_IDLE_MS)) {
@@ -94,6 +94,7 @@ export async function healthResponse(deps: ApiDependencies) {
     const meta = jsonRecord(row.meta);
     const lastOk = dateValue(row.last_ok);
     const intervalMs = numberValue(meta.intervalMs, defaultIntervalsMs[row.job] ?? 0);
+    if (row.last_error) warnings.push(`Keeper job ${row.job} is failing.`);
     if (!lastOk && (row.last_error || dateValue(row.last_run))) {
       warnings.push(`Keeper job ${row.job} has not succeeded yet.`);
       continue;
@@ -148,7 +149,7 @@ export async function healthResponse(deps: ApiDependencies) {
   };
 }
 
-export function databaseDownHealth(error: unknown) {
+export function databaseDownHealth() {
   return {
     ok: false,
     db: { ok: false },
@@ -157,6 +158,6 @@ export function databaseDownHealth(error: unknown) {
     lagBlocks: null,
     keeper: {},
     rpc: { date: null, keys: [] },
-    warnings: [safeErrorSummary(error).message],
+    warnings: ["Database is unavailable."],
   };
 }
