@@ -56,7 +56,10 @@ export async function handleTokenEvent(
   }
 
   await accountSeen(context.tx, event, [from, to]);
-  touch(context, from, to);
+  // Only vault-share holders need per-account vault state (depositor flag,
+  // unlock time) read at snapshot time; power-token balances come from events.
+  // Tracking every power-token recipient let dust transfers inflate snapshots.
+  if (isCrab) touch(context, from, to);
   context.hasOgeeEvents = true;
   if (isCrab) context.snapshotNeeded = true;
   context.kinds.add("transfer");

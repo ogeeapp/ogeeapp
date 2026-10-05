@@ -31,6 +31,14 @@ const INITIAL_RANGE = 50_000n;
 const MAX_RANGE = 200_000n;
 const SNAPSHOT_HEARTBEAT_MS = 10 * 60_000;
 const SNAPSHOT_DEBOUNCE_MS = 2_000;
+// Queued account reads left over from a capped snapshot drain at this pace.
+const ACCOUNT_BACKLOG_SNAPSHOT_MS = 60_000;
+
+function snapshotDue(state: IndexerState): boolean {
+  const sinceLast = Date.now() - state.lastSnapshotAt;
+  return state.pendingSnapshot || sinceLast >= SNAPSHOT_HEARTBEAT_MS
+    || (state.pendingAccountSnapshots.size > 0 && sinceLast >= ACCOUNT_BACKLOG_SNAPSHOT_MS);
+}
 const ACTIVE_EVENT_MS = 2 * 60_000;
 const USER_ACTIVITY_MS = 60_000;
 const IDLE_AFTER_MS = 30 * 60_000;
@@ -508,7 +516,7 @@ async function initializeAtFreshHead(state: IndexerState, head: bigint): Promise
   state.pendingSnapshot = true;
   const stateSnapshot = await takeSnapshot(state, confirmedHead, state.pendingAccountSnapshots);
   state.pendingSnapshot = false;
-  state.pendingAccountSnapshots.clear();
+  for (const account of stateSnapshot.processedAccounts) state.pendingAccountSnapshots.delete(account);
   state.lastSnapshotAt = stateSnapshot.snapshotAt.getTime();
   state.initialized = true;
   state.failureBackoffMs = 5_000;
@@ -659,7 +667,8 @@ async function ingestDecodedRange(
 async function takePendingSnapshot(state: IndexerState, block: bigint): Promise<void> {
   const snapshot = await takeSnapshot(state, block, state.pendingAccountSnapshots);
   state.pendingSnapshot = false;
-  state.pendingAccountSnapshots.clear();
+  // Accounts beyond the per-snapshot cap, or whose reads failed, carry over.
+  for (const account of snapshot.processedAccounts) state.pendingAccountSnapshots.delete(account);
   state.lastSnapshotAt = snapshot.snapshotAt.getTime();
   await writeIndexerStatus(state, block, null);
 }
@@ -791,8 +800,7 @@ export async function runIndexerTick(state: IndexerState): Promise<TickResult> {
       state.range = state.range * 2n > MAX_RANGE ? MAX_RANGE : state.range * 2n;
       state.successfulRanges = 0;
     }
-    const heartbeatDue = Date.now() - state.lastSnapshotAt >= SNAPSHOT_HEARTBEAT_MS;
-    if ((state.pendingSnapshot || heartbeatDue) && toBlock === confirmedHead) {
+    if (snapshotDue(state) && toBlock === confirmedHead) {
       if (state.pendingSnapshot) await new Promise((resolve) => setTimeout(resolve, SNAPSHOT_DEBOUNCE_MS));
       try {
         await takePendingSnapshot(state, confirmedHead);
@@ -809,7 +817,7 @@ export async function runIndexerTick(state: IndexerState): Promise<TickResult> {
     };
   }
 
-  if ((state.pendingSnapshot || Date.now() - state.lastSnapshotAt >= SNAPSHOT_HEARTBEAT_MS) && confirmedHead > 0n) {
+  if (snapshotDue(state) && confirmedHead > 0n) {
     try {
       await takePendingSnapshot(state, confirmedHead);
     } catch (error) {

@@ -10,6 +10,7 @@ import type { MarketInfo } from "./types";
 import { toMarketState, type MarketStateSnapshot } from "./markets-sync";
 import { asAddress, asBigInt, asNumber, crab, parseChainTimestamp, parseUsdg, power, usdg, wad } from "./units";
 import { timestampAtBlock } from "./rpc";
+import { safeErrorSummary } from "../log";
 
 export interface SnapshotRuntime {
   readonly clients: ServiceClients;
@@ -28,6 +29,8 @@ export interface SnapshotResult {
   readonly chainTimestamp: string;
   readonly observedAt: string;
   readonly snapshotAt: Date;
+  /** Queued accounts whose vault state was read and stored by this snapshot. */
+  readonly processedAccounts: ReadonlySet<string>;
 }
 
 interface TickInsertRow {
@@ -86,6 +89,7 @@ async function storeSnapshotStatus(
   snapshotAt: Date,
   globalBuysPaused: boolean,
   vaultView: unknown,
+  remainingAccounts: readonly string[],
 ): Promise<void> {
   runtime.globalConfig.globalBuysPaused = globalBuysPaused;
   runtime.globalConfig.maxGlobalExposureBps = asNumber(objectField(vaultView, "maxGlobalExposureBps", 6));
@@ -101,7 +105,7 @@ async function storeSnapshotStatus(
     chainTimeObservedAt: observedAt,
     pendingSnapshot: false,
     registrySyncPending: false,
-    pendingAccountSnapshots: [],
+    pendingAccountSnapshots: remainingAccounts,
     rpc: runtime.clients.pool.stats(),
   };
   await tx`
@@ -115,6 +119,56 @@ async function storeSnapshotStatus(
   `;
 }
 
+/** Accounts read per multicall, and the cap on account reads per snapshot.
+ * Accounts beyond the cap (or whose reads failed) stay queued for the next
+ * snapshot, so a burst of dust transfers cannot inflate one snapshot. */
+export const ACCOUNT_CHUNK_SIZE = 200;
+export const MAX_ACCOUNTS_PER_SNAPSHOT = 1_000;
+
+interface AccountVaultState {
+  readonly account: Address;
+  readonly isDepositor: boolean;
+  readonly unlockTime: bigint;
+}
+
+async function readAccountStates(
+  runtime: SnapshotRuntime,
+  block: bigint,
+  accounts: readonly Address[],
+): Promise<AccountVaultState[]> {
+  const results: AccountVaultState[] = [];
+  for (let start = 0; start < accounts.length; start += ACCOUNT_CHUNK_SIZE) {
+    const chunk = accounts.slice(start, start + ACCOUNT_CHUNK_SIZE);
+    const contracts = chunk.flatMap((account) => [
+      { address: runtime.deployment.contracts.vault, abi: CrabVaultAbi, functionName: "isDepositor", args: [account] },
+      { address: runtime.deployment.contracts.vault, abi: CrabVaultAbi, functionName: "unlockTime", args: [account] },
+    ]);
+    let values: { status: "success" | "failure"; result?: unknown }[];
+    try {
+      // batchSize 0: one eth_call per chunk, chunks run one after another.
+      values = (await runtime.clients.stateClient.multicall({
+        contracts: contracts as never,
+        allowFailure: true,
+        batchSize: 0,
+        blockNumber: block,
+      } as never)) as typeof values;
+    } catch (error) {
+      runtime.logger.warn({ err: safeErrorSummary(error), remaining: accounts.length - start },
+        "Account snapshot chunk failed; remaining accounts stay queued");
+      break;
+    }
+    let failed = 0;
+    for (const [index, account] of chunk.entries()) {
+      const isDepositor = values[index * 2];
+      const unlockTime = values[index * 2 + 1];
+      if (isDepositor?.status !== "success" || unlockTime?.status !== "success") { failed++; continue; }
+      results.push({ account, isDepositor: Boolean(isDepositor.result), unlockTime: asBigInt(unlockTime.result) });
+    }
+    if (failed > 0) runtime.logger.warn({ failed }, "Some account snapshot reads failed; those accounts stay queued");
+  }
+  return results;
+}
+
 export async function takeSnapshot(
   runtime: SnapshotRuntime,
   block: bigint,
@@ -122,7 +176,7 @@ export async function takeSnapshot(
 ): Promise<SnapshotResult> {
   const blockTime = await timestampAtBlock(runtime.clients.pool, block);
   const observedAt = new Date().toISOString();
-  const accountAddresses = [...touchedAccounts].map((address) => address.toLowerCase() as Address);
+  const queuedAccounts = [...new Set([...touchedAccounts].map((address) => address.toLowerCase()))].sort();
   const marketIds = [...runtime.marketsById.keys()].sort((a, b) => a - b);
   const contracts: unknown[] = [
     { address: runtime.deployment.contracts.lens, abi: OgeeLensAbi, functionName: "markets", args: [runtime.deployment.contracts.engine] },
@@ -132,15 +186,15 @@ export async function takeSnapshot(
   for (const id of marketIds) {
     contracts.push({ address: runtime.deployment.contracts.engine, abi: PowerEngineAbi, functionName: "getState", args: [id] });
   }
-  for (const account of accountAddresses) {
-    contracts.push({ address: runtime.deployment.contracts.vault, abi: CrabVaultAbi, functionName: "isDepositor", args: [account] });
-    contracts.push({ address: runtime.deployment.contracts.vault, abi: CrabVaultAbi, functionName: "unlockTime", args: [account] });
-  }
   const values = (await runtime.clients.stateClient.multicall({
     contracts: contracts as never,
     allowFailure: false,
     blockNumber: block,
   } as never)) as unknown[];
+  const accountStates = await readAccountStates(
+    runtime, block, queuedAccounts.slice(0, MAX_ACCOUNTS_PER_SNAPSHOT) as Address[]);
+  const processed = new Set<string>(accountStates.map((state) => state.account));
+  const remainingAccounts = queuedAccounts.filter((account) => !processed.has(account));
   const marketViews = (Array.isArray(values[0]) ? values[0] : []) as Record<string, unknown>[];
   const vaultView = values[1] as Record<string, unknown>;
   const globalBuysPaused = Boolean(values[2]);
@@ -260,14 +314,11 @@ export async function takeSnapshot(
         deposit_cap_remaining = EXCLUDED.deposit_cap_remaining
     `;
 
-    const accountsOffset = 3 + marketIds.length;
-    for (const [index, account] of accountAddresses.entries()) {
-      const isDepositor = Boolean(values[accountsOffset + index * 2]);
-      const unlockTime = asBigInt(values[accountsOffset + index * 2 + 1]);
+    for (const { account, isDepositor, unlockTime } of accountStates) {
       await tx`
         INSERT INTO vault_account_state (account, is_depositor, unlock_time, updated_block, updated_at)
         VALUES (
-          ${account.toLowerCase()}, ${isDepositor},
+          ${account}, ${isDepositor},
           ${unlockTime === 0n ? null : new Date(Number(unlockTime) * 1_000).toISOString()},
           ${block.toString()}, NOW()
         )
@@ -287,6 +338,7 @@ export async function takeSnapshot(
       snapshotAt,
       globalBuysPaused,
       vaultView,
+      remainingAccounts,
     );
     await tx.notify(
       OGEE_EVENTS_CHANNEL,
@@ -304,6 +356,7 @@ export async function takeSnapshot(
     chainTimestamp: Math.floor(blockTime.getTime() / 1_000).toString(),
     observedAt,
     snapshotAt,
+    processedAccounts: processed,
   };
 }
 
