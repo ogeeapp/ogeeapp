@@ -10,6 +10,7 @@ import { registerMarketRoutes } from "./routes/markets";
 import { registerStatsRoutes } from "./routes/stats";
 import { registerVaultRoutes } from "./routes/vault";
 import { safeErrorSummary } from "../log";
+import { rateLimit } from "./rate-limit";
 
 export function createApiApp(deps: ApiDependencies) {
   const allowedOrigins = new Set(deps.config.CORS_ORIGINS);
@@ -39,6 +40,11 @@ export function createApiApp(deps: ApiDependencies) {
       durationMs: Date.now() - startedAt,
     }, "API request");
   });
+  app.use("*", rateLimit({
+    limit: deps.config.API_RATE_LIMIT_PER_MINUTE,
+    windowMs: 60_000,
+    clientIpHeader: deps.config.API_CLIENT_IP_HEADER,
+  }));
 
   registerHealthRoutes(app, deps);
   registerConfigRoutes(app, deps);
@@ -65,7 +71,7 @@ export function createApiApp(deps: ApiDependencies) {
     return context.json({
       error: typeof record?.apiError === "string" ? record.apiError : status === 500 ? "INTERNAL_ERROR" : "BAD_REQUEST",
       message,
-    }, status as 400 | 404 | 422 | 500);
+    }, status as 400 | 404 | 422 | 429 | 500);
   });
   return app;
 }
