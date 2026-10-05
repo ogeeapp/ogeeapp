@@ -196,6 +196,8 @@ contract SystemInvariantTest is SystemFixture {
                 vm.toString(handler.ghostMaxSharePriceDrop()),
                 " lockedRejections=",
                 vm.toString(handler.ghostLockedRejections()),
+                " withdrawCashShortReverts=",
+                vm.toString(handler.ghostWithdrawCashShortReverts()),
                 " liability=",
                 vm.toString(engine.totalLiability() / 1e18),
                 " supply0=",

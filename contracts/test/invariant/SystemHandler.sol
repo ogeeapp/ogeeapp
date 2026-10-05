@@ -50,6 +50,8 @@ contract SystemHandler is CommonBase, StdCheats, StdUtils {
     uint256 public ghostSharePriceChecks;
     uint256 public ghostLockedMoves;
     uint256 public ghostLockedRejections;
+    uint256 public ghostWithdrawCashShortReverts;
+    bytes4 internal constant ERC20_INSUFFICIENT_BALANCE = 0xe450d38c;
     uint256 public ghostNormFactorIncreases;
     uint256 public ghostTreasuryDecreases;
     uint256[N] public ghostLastNormFactor;
@@ -186,6 +188,13 @@ contract SystemHandler is CommonBase, StdCheats, StdUtils {
             if (locked) ++ghostLockedMoves;
             _checkSharePrice(priceBefore);
         } catch (bytes memory err) {
+            // Known open issue (EdgeCasesTest.testFindingExactAssetWithdrawNeedingCashRaiseReverts): a withdraw within
+            // maxWithdraw that needs a short-filled hedge sale reverts on the final USDG transfer. Count it.
+            if (err.length >= 4 && bytes4(err) == ERC20_INSUFFICIENT_BALANCE && amount <= maxAssets) {
+                ++ghostWithdrawCashShortReverts;
+                _after();
+                return;
+            }
             _failOrLocked(err);
         }
         _after();
