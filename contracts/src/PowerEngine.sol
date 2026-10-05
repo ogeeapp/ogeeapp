@@ -598,14 +598,18 @@ contract PowerEngine is
         if (total + addedLiability > Math.mulDiv(nav, maxGlobalExposureBps, BPS)) revert GlobalCapExceeded();
     }
 
+    /// @dev Leaky-bucket budget: usage decays linearly to zero over PAUSED_SELL_WINDOW, so no interval of any
+    /// length lets out more than `cap` plus what has drained since. Legacy field names: `pausedSellBlock` stores the
+    /// last paused-sell timestamp (pre-upgrade window indices read as long-expired timestamps).
     function _consumePausedSellCap(uint8 id, uint256 grossUsdg) private {
-        // Legacy field names: `pausedSellBlock` stores the window index and the cap applies per PAUSED_SELL_WINDOW.
         MarketState storage state = _states[id];
-        uint64 currentWindow = uint64(block.timestamp / PAUSED_SELL_WINDOW);
-        uint256 used = state.pausedSellBlock == currentWindow ? state.pausedSellUsed : 0;
+        uint256 elapsed = block.timestamp - state.pausedSellBlock;
+        uint256 used = elapsed >= PAUSED_SELL_WINDOW
+            ? 0
+            : Math.mulDiv(state.pausedSellUsed, PAUSED_SELL_WINDOW - elapsed, PAUSED_SELL_WINDOW, Math.Rounding.Ceil);
         uint256 cap = _configs[id].pausedSellCapPerBlockUsdg;
         if (grossUsdg > cap || used > cap - grossUsdg) revert PausedSellCapExceeded();
-        state.pausedSellBlock = currentWindow;
+        state.pausedSellBlock = uint64(block.timestamp);
         state.pausedSellUsed = uint128(used + grossUsdg);
     }
 

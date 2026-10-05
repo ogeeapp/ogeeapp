@@ -57,6 +57,7 @@ struct MarketState {
     uint64 lastGoodAt;
     uint128 vaultShort;
     uint16 lastUtilBps;
+    /// @dev Timestamp of the last paused sell; `pausedSellUsed` decays linearly to zero over one window after it.
     uint64 pausedSellBlock;
     uint128 pausedSellUsed;
 }
