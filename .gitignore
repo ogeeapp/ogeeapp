@@ -6,6 +6,7 @@ broadcast/
 *.env
 *.env.*
 .envrc
+!.env.example
 credentials/
 secrets/
 *.key
