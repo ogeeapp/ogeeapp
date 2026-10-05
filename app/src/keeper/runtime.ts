@@ -10,6 +10,7 @@ import { MarketHoursAbi } from "../abi/MarketHours";
 import { chainClock, readIndexerMetadata, saveJobMeta, type KeeperContext } from "./context";
 import { createScheduler } from "./scheduler";
 import { createTransactionQueue } from "./tx";
+import { acquireKeeperLock } from "./lock";
 import { updateSessions, sessionHash } from "./jobs/sessions";
 import { accrueStale } from "./jobs/accrue";
 import { createHedgeJob } from "./jobs/hedge";
@@ -71,9 +72,13 @@ async function startup(): Promise<Deployment> {
   return deployment;
 }
 
+// Only one keeper instance may sign: a standby instance waits here until the
+// active one exits and releases the lock.
+const lock = await acquireKeeperLock(config.DATABASE_URL, logger, abort.signal);
+
 let context: KeeperContext | undefined;
 let priorStartupError = "";
-while (!abort.signal.aborted && !context) {
+while (!abort.signal.aborted && lock && !context) {
   try {
     const deployment = await startup();
     context = { sql, clients, deployment, config, logger, tx,
@@ -92,13 +97,14 @@ while (!abort.signal.aborted && !context) {
   }
 }
 
+const HELD_NONCE_STUCK_MS = 10 * 60_000;
 const boundaryTimers: ReturnType<typeof setTimeout>[] = [];
 const firedBoundaries = new Set<string>();
 let forceAccrue = false;
 let unlisten: (() => Promise<void>) | undefined;
 let heartbeat: ReturnType<typeof setInterval> | undefined;
 let pulseBusy = false;
-if (context && !abort.signal.aborted) {
+if (context && lock && !abort.signal.aborted) {
   const ctx = context;
   const definitions = [
     { name: "sessions", everyMs: 3600000, run: () => updateSessions(ctx) },
@@ -131,10 +137,29 @@ if (context && !abort.signal.aborted) {
     if (pulseBusy || abort.signal.aborted) return;
     pulseBusy = true;
     try {
-      await writeFile("/tmp/heartbeat", new Date().toISOString());
-      const meta = { ready: true, dryRun: config.KEEPER_DRY_RUN, rpc: clients.pool.stats(), signer: clients.walletClient?.account?.address };
-      await sql`insert into keeper_status (job,last_run,last_ok,meta) values ('keeper',now(),now(),${JSON.stringify(meta)}::jsonb)
-        on conflict (job) do update set last_run=now(),last_ok=now(),last_error=null,meta=keeper_status.meta || excluded.meta`;
+      if (await lock.check() === "lost") {
+        logger.fatal("Keeper lost its single-instance lock to another instance; stopping");
+        process.exitCode = 1;
+        abort.abort();
+        return;
+      }
+      const txStatus = tx.status();
+      const held = txStatus.heldNonce !== null;
+      const heldMs = txStatus.heldSince ? Date.now() - Date.parse(txStatus.heldSince) : 0;
+      // A nonce held past the stuck threshold stops the container heartbeat so
+      // the orchestrator flags (and may restart) the keeper; a restart is safe
+      // because a fresh queue refuses new nonces while one is pending on chain.
+      if (heldMs < HELD_NONCE_STUCK_MS) await writeFile("/tmp/heartbeat", new Date().toISOString());
+      const meta = { ready: !held, dryRun: config.KEEPER_DRY_RUN, rpc: clients.pool.stats(),
+        signer: clients.walletClient?.account?.address, tx: txStatus };
+      if (held) {
+        const message = `Keeper nonce ${txStatus.heldNonce} is held awaiting resolution`;
+        await sql`insert into keeper_status (job,last_run,last_error,meta) values ('keeper',now(),${message},${JSON.stringify(meta)}::jsonb)
+          on conflict (job) do update set last_run=now(),last_error=excluded.last_error,meta=keeper_status.meta || excluded.meta`;
+      } else {
+        await sql`insert into keeper_status (job,last_run,last_ok,meta) values ('keeper',now(),now(),${JSON.stringify(meta)}::jsonb)
+          on conflict (job) do update set last_run=now(),last_ok=now(),last_error=null,meta=keeper_status.meta || excluded.meta`;
+      }
       if (!enabled.has("accrue")) return;
       const now = ctx.now(await ctx.metadata()).getTime();
       const rows = await sql<{ meta: { sessions?: { open: string; close: string }[] } }[]>`select meta from keeper_status where job='sessions'`;
@@ -173,4 +198,5 @@ await unlisten?.();
 await scheduler.stop();
 await tx.drain();
 await sql.end({ timeout: 5 });
+await lock?.release();
 logger.info("Keeper stopped");
