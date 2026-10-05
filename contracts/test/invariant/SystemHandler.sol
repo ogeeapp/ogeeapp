@@ -252,6 +252,9 @@ contract SystemHandler is CommonBase, StdCheats, StdUtils {
         if (vm.getBlockTimestamp() < st.baseCarryUpdatedAt + 1 days && marketSeed % 4 != 0) return;
         int256 current = st.baseCarryWad;
         int256 next = current + current * bound(stepBps, -2_500, 2_500) / 10_000;
+        // Stay inside the configured [3e15, 5e15] band, so reverts come from the cadence/step guards under test.
+        if (next < 3e15) next = 3e15;
+        if (next > 5e15) next = 5e15;
         vm.prank(KEEPER);
         try engine.setBaseCarry(id, int64(next)) {}
         catch (bytes memory err) {
