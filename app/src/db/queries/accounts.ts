@@ -1,5 +1,6 @@
 import { fixed, decimal, divide, multiply, projectNormFactor, priceAtNormFactor } from "../../lib/fixed";
 import { addAtCost, emptyCostState, removeAtAverageCost, type CostState } from "./cost-ledger";
+import { vaultCostBasis, vaultLedger } from "./vault-ledger";
 import { apiNow } from "../../api/clock";
 import type { ApiDependencies, DbRow } from "../../api/types";
 import { asRows, dateValue, numberValue } from "../../api/types";
@@ -41,7 +42,7 @@ export async function accountPortfolio(deps: ApiDependencies, rawAddress: string
     where b.account = ${address} and b.balance > 0 order by m.id
   `;
   const positions = asRows<PositionRow>(positionsResult);
-  const [marketResult, eventResult, crabResult, vaultResult, accountStateResult] = await Promise.all([
+  const [marketResult, eventResult, crabResult, vaultResult, accountStateResult, crabEvents] = await Promise.all([
     deps.sql`
       select m.id, t.ts, t.norm_factor, t.price, t.carry_wad
       from markets m left join lateral (select * from ticks where market_id = m.id order by ts desc limit 1) t on true
@@ -72,9 +73,10 @@ export async function accountPortfolio(deps: ApiDependencies, rawAddress: string
         order by block desc, log_index desc limit ${PORTFOLIO_EVENT_LIMIT + 1}
       ) ledger order by block, log_index
     `,
-    deps.sql`select balance::text from balances where account = ${address} and token = ${deps.deployment.contracts.vault} limit 1`,
+    deps.sql`select balance::text from balances where account = ${address} and token = ${deps.deployment.contracts.vault.toLowerCase()} limit 1`,
     deps.sql`select nav_per_share::text from vault_ticks order by ts desc limit 1`,
     deps.sql`select is_depositor, unlock_time from vault_account_state where account = ${address} limit 1`,
+    vaultLedger(deps, address),
   ]);
   const marketRows = asRows<DbRow>(marketResult);
   const marketById = new Map(marketRows.map((row) => [numberValue(row.id), row]));
@@ -132,12 +134,14 @@ export async function accountPortfolio(deps: ApiDependencies, rawAddress: string
   });
   const crabShares = fixed(asRows<DbRow>(crabResult)[0]?.balance as string | undefined);
   const navPerShare = fixed(asRows<DbRow>(vaultResult)[0]?.nav_per_share as string | undefined);
+  const crabValue = multiply(crabShares, navPerShare);
   const accountState = asRows<DbRow>(accountStateResult)[0];
   return {
     positions: responsePositions,
     crab: {
       shares: decimal(crabShares),
-      value: decimal(multiply(crabShares, navPerShare)),
+      value: decimal(crabValue),
+      ...vaultCostBasis(crabEvents, crabShares, crabValue),
       unlockTime: dateValue(accountState?.unlock_time)?.toISOString() ?? null,
       isDepositor: accountState?.is_depositor === true,
     },

@@ -68,7 +68,8 @@ export const regimeListSchema = z.array(z.object({
 export const portfolioResponseSchema = z.object({
   positions: z.array(z.object({ symbol: z.string(), balance: decimal, price: decimal, value: decimal, avgCost: decimal,
     costBasis: decimal, unrealizedPnl: decimal, realizedPnl: decimal })),
-  crab: z.object({ shares: decimal, value: decimal, unlockTime: isoDateTime.nullable(), isDepositor: z.boolean() }),
+  crab: z.object({ shares: decimal, value: decimal, costBasis: decimal, change: decimal, changePct: percent.nullable(),
+    historyComplete: z.boolean(), unlockTime: isoDateTime.nullable(), isDepositor: z.boolean() }),
   totals: z.object({ powerValue: decimal, unrealizedPnl: decimal, realizedPnl: decimal }),
   /** False when the cost-basis ledger was capped to the newest entries. */
   historyComplete: z.boolean(),
