@@ -50,6 +50,16 @@ Robinhood Chain mainnet (chain ID `4663`), deployed at block `78474037`; engine 
 | `MarketHours` (implementation) | [`0x2dFFC40B5FA09a584C057D16426B1952AD69865C`](https://robinhoodchain.blockscout.com/address/0x2dFFC40B5FA09a584C057D16426B1952AD69865C) |
 | USDG (collateral) | [`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`](https://robinhoodchain.blockscout.com/address/0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168) |
 
+Governance (since 2026-10-07): the timelock is the only admin of the engine, vault and market hours. Every upgrade or
+parameter change is proposed by the Safe, waits at least 48 hours in public, and is then executed by the Safe; the Safe
+can cancel it in between. The deployer key holds no roles.
+
+| Role | Address |
+| --- | --- |
+| Admin: `TimelockController` (48-hour delay) | [`0x0F9304D40087B2c7616eA1229f0763E1BAD50aB5`](https://robinhoodchain.blockscout.com/address/0x0F9304D40087B2c7616eA1229f0763E1BAD50aB5) |
+| Proposer / executor / canceller, guardian: 2-of-3 Safe | [`0x66a60131AE3526F8533f7955C44e827Fa40Ab70b`](https://robinhoodchain.blockscout.com/address/0x66a60131AE3526F8533f7955C44e827Fa40Ab70b) |
+| Keeper and guardian (can only pause buys) | [`0xe88f2aAA0653016d5147741262C8FEb496562E48`](https://robinhoodchain.blockscout.com/address/0xe88f2aAA0653016d5147741262C8FEb496562E48) |
+
 Markets (`PowerToken` per market, and the stock token it tracks):
 
 | Market | PowerToken | Stock token |
@@ -84,8 +94,8 @@ accepted risks and audit history. Contract invariants and the tests that check t
 ## Upgrades and operations
 
 Upgrade, timelock handoff and post-deploy check scripts live in [`contracts/script`](contracts/script/README.md).
-The recommended order is: rehearse on a local fork, upgrade, run the post-deploy check, hand the admin role to a
-48-hour timelock controlled by a Safe, and run the check again.
+The admin role was handed to a 48-hour timelock controlled by a Safe on 2026-10-07 (see the governance table above);
+later upgrades are scheduled through the Safe (`UpgradeV2.s.sol` in `timelock` mode).
 
 CI ([`.github/workflows`](.github/workflows)) builds and tests the contracts and services, runs Slither, Semgrep and
 Gitleaks on every push, and runs the read-only post-deploy check against mainnet every six hours.
