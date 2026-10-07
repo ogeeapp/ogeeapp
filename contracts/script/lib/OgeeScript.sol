@@ -169,7 +169,7 @@ abstract contract OgeeScript is Script {
         d.marketHoursImpl = 0x2dFFC40B5FA09a584C057D16426B1952AD69865C;
         d.deployBlock = 78_474_037;
 
-        d.markets = new Market[](5);
+        d.markets = new Market[](7);
         d.markets[0] = Market(
             0,
             "NVDA",
@@ -212,6 +212,24 @@ abstract contract OgeeScript is Script {
             0x9122bC8A36DCBC965aD86574D421b44B7F8e211E,
             0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9,
             0x6B22A786bAa607d76728168703a39Ea9C99f2cD0,
+            10000,
+            500
+        );
+        d.markets[5] = Market(
+            5,
+            "AMD",
+            0x278ADA8f483917D869114F885cd1e64abb441b64,
+            0x86923f96303D656E4aa86D9d42D1e57ad2023fdC,
+            0x943A29E7ae51A4798823ca9eEd2ed533B2A22C72,
+            10000,
+            3000
+        );
+        d.markets[6] = Market(
+            6,
+            "QQQ",
+            0xF1C33069c3a0A54f117FF333e0e6C0043F95AbBF,
+            0xD5f3879160bc7c32ebb4dC785F8a4F505888de68,
+            0x80901d846d5D7B030F26B480776EE3b29374C2ae,
             10000,
             500
         );
