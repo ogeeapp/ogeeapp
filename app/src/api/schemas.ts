@@ -53,7 +53,10 @@ export const marketSchema = z.object({
 export const marketListResponseSchema = z.array(marketSchema);
 export const marketDetailResponseSchema = marketSchema.extend({
   config: z.record(z.string(), z.unknown()),
-  stats: z.object({ trades24h: z.number().int().nonnegative(), holders: z.number().int().nonnegative() }),
+  stats: z.object({
+    trades24h: z.number().int().nonnegative(), holders: z.number().int().nonnegative(),
+    buyVolume24hUsd: decimal, sellVolume24hUsd: decimal,
+  }),
 });
 
 export const candleSchema = z.array(z.object({

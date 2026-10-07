@@ -77,7 +77,7 @@ export interface MarketView {
     globalCapacityUsd: string;
   };
   config: Record<string, unknown>;
-  stats: { trades24h: number; holders: number };
+  stats: { trades24h: number; holders: number; buyVolume24hUsd: string; sellVolume24hUsd: string };
 }
 
 function configNumber(config: Record<string, unknown>, name: string, fallback: number): number {
@@ -249,7 +249,7 @@ export async function listMarkets(deps: ApiDependencies, requestedNow?: Date): P
         globalCapacityUsd: decimal(globalRoom),
       },
       config: publicConfig,
-      stats: { trades24h: 0, holders: 0 },
+      stats: { trades24h: 0, holders: 0, buyVolume24hUsd: "0", sellVolume24hUsd: "0" },
     };
     if (corp) {
       view.corpAction = {
@@ -289,11 +289,18 @@ export async function getMarketDetail(deps: ApiDependencies, symbol: string, req
   if (!market) return null;
   const result = await deps.sql`
     select count(*)::int as trades_24h,
+      coalesce(sum(usdg) filter (where side = 'buy'), 0)::text as buy_volume_24h,
+      coalesce(sum(usdg) filter (where side = 'sell'), 0)::text as sell_volume_24h,
       (select count(*)::int from balances where token = ${market.token} and balance > 0) as holders
     from trades where market_id = ${market.id} and ts >= ${now.toISOString()}::timestamptz - interval '24 hours'
   `;
   const stats = asRows<DbRow>(result)[0] ?? {};
-  market.stats = { trades24h: numberValue(stats.trades_24h), holders: numberValue(stats.holders) };
+  market.stats = {
+    trades24h: numberValue(stats.trades_24h),
+    holders: numberValue(stats.holders),
+    buyVolume24hUsd: textValue(stats.buy_volume_24h, "0"),
+    sellVolume24hUsd: textValue(stats.sell_volume_24h, "0"),
+  };
   return market;
 }
 
