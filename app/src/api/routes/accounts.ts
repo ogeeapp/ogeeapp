@@ -1,8 +1,9 @@
-import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
+import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import type { ApiDependencies } from "../types";
-import { accountStatsResponseSchema, activityQuery, activityResponseSchema, addressParams, portfolioResponseSchema } from "../schemas";
+import { accountStatsResponseSchema, activityQuery, activityResponseSchema, addressParams, exportQuery, portfolioResponseSchema } from "../schemas";
 import { accountActivity, accountPortfolio } from "../../db/queries/accounts";
 import { accountStats } from "../../db/queries/account-stats";
+import { accountExport } from "../../db/queries/account-export";
 
 const portfolioRoute = createRoute({
   method: "get", path: "/v1/accounts/{address}/portfolio", tags: ["accounts"], request: { params: addressParams },
@@ -15,6 +16,10 @@ const activityRoute = createRoute({
 const statsRoute = createRoute({
   method: "get", path: "/v1/accounts/{address}/stats", tags: ["accounts"], request: { params: addressParams },
   responses: { 200: { description: "Lifetime trading statistics for a wallet", content: { "application/json": { schema: accountStatsResponseSchema } } } },
+});
+const exportRoute = createRoute({
+  method: "get", path: "/v1/accounts/{address}/export.csv", tags: ["accounts"], request: { params: addressParams, query: exportQuery },
+  responses: { 200: { description: "Complete wallet history as CSV", content: { "text/csv": { schema: z.string() } } } },
 });
 
 export function registerAccountRoutes(app: OpenAPIHono, deps: ApiDependencies): void {
@@ -33,5 +38,17 @@ export function registerAccountRoutes(app: OpenAPIHono, deps: ApiDependencies): 
     context.header("Cache-Control", "private, max-age=15");
     const { address } = context.req.valid("param");
     return context.json(await deps.cache.getOrLoad(`accounts:stats:${address}`, 10_000, () => accountStats(deps, address)), 200);
+  });
+  app.openapi(exportRoute, async (context) => {
+    const { address } = context.req.valid("param");
+    const { type, from, to } = context.req.valid("query");
+    const result = await accountExport(deps, address, type, from, to);
+    return context.body(result.csv, 200, {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="ogee-${address.slice(2, 8)}-${from ?? "start"}-${to ?? "today"}.csv"`,
+      "Cache-Control": "private, no-store",
+      "X-Ogee-History-Complete": String(result.historyComplete),
+      "X-Ogee-Truncated": String(result.truncated),
+    });
   });
 }

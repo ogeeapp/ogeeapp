@@ -107,3 +107,15 @@ function csvField(value: string): string {
 export function toCsv(header: string[], rows: string[][]): string {
   return `﻿${[header, ...rows].map((row) => `${row.map(csvField).join(",")}\r\n`).join("")}`;
 }
+
+/** The wallet's activity as CSV, filtered by type and inclusive UTC dates. */
+export async function accountExport(
+  deps: ApiDependencies,
+  address: string,
+  type: ExportType,
+  from: string | undefined,
+  to: string | undefined,
+): Promise<{ csv: string; historyComplete: boolean; truncated: boolean }> {
+  const { rows, truncated } = await exportActivityRows(deps, address, type);
+  return { csv: toCsv(EXPORT_HEADER, buildExportRows(rows, from, to)), historyComplete: true, truncated };
+}

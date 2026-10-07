@@ -27,7 +27,7 @@ export function createApiApp(deps: ApiDependencies) {
     origin: (origin) => origin && allowedOrigins.has(origin) ? origin : "",
     allowMethods: ["GET", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
-    exposeHeaders: ["Cache-Control"],
+    exposeHeaders: ["Cache-Control", "Content-Disposition", "X-Ogee-History-Complete", "X-Ogee-Truncated"],
     maxAge: 600,
     credentials: false,
   }));

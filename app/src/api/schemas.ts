@@ -139,4 +139,10 @@ export const rangeQuery = z.object({ range: z.enum(["1H", "4H", "1D", "1W", "1M"
 export const carryRangeQuery = z.object({ range: z.enum(["1W", "1M", "ALL"]).default("1W") });
 export const limitQuery = z.object({ limit: z.coerce.number().int().min(1).max(200).default(50) });
 export const activityQuery = z.object({ type: z.enum(["all", "trades", "vault"]).default("all"), cursor: z.string().max(512).optional(), limit: z.coerce.number().int().min(1).max(100).default(50) });
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((v) => Number.isFinite(Date.parse(`${v}T00:00:00Z`)), "Invalid date");
+export const exportQuery = z.object({
+  type: z.enum(["all", "trades", "vault"]).default("all"),
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+}).refine((q) => !q.from || !q.to || q.from <= q.to, "from must not be after to");
 export const corpActionsQuery = z.object({ symbol: z.string().min(1).max(16).transform((value) => value.toUpperCase()).optional() });
