@@ -5,7 +5,7 @@ import { asRows, dateValue, numberValue, textValue } from "../../api/types";
 
 export async function vaultSnapshot(deps: ApiDependencies) {
   const now = await apiNow(deps);
-  const [vaultResult, marketResult, changeResult] = await Promise.all([
+  const [vaultResult, marketResult, changeResult, change30dResult, inceptionResult] = await Promise.all([
     deps.sql`select * from vault_ticks order by ts desc limit 1`,
     deps.sql`
       select m.symbol, t.liability::text, t.hedge_units::text, t.hedge_target::text, t.spot::text
@@ -16,6 +16,11 @@ export async function vaultSnapshot(deps: ApiDependencies) {
       select nav_per_share::text from vault_ticks
       where ts <= ${now.toISOString()}::timestamptz - interval '7 days' order by ts desc limit 1
     `,
+    deps.sql`
+      select nav_per_share::text from vault_ticks
+      where ts <= ${now.toISOString()}::timestamptz - interval '30 days' order by ts desc limit 1
+    `,
+    deps.sql`select nav_per_share::text from vault_ticks order by ts asc limit 1`,
   ]);
   const vault = asRows<DbRow>(vaultResult)[0] ?? {};
   const nav = fixed(vault.nav as string | undefined);
@@ -26,6 +31,10 @@ export async function vaultSnapshot(deps: ApiDependencies) {
   const maxGlobalExposureBps = numberValue(vault.max_global_exposure_bps, 5000);
   const exposureLimit = nav > 0n ? fromBps(nav, maxGlobalExposureBps) : 0n;
   const priorNavPerShare = fixed(asRows<DbRow>(changeResult)[0]?.nav_per_share as string | undefined);
+  const referenceChange = (result: unknown): number | null => {
+    const reference = fixed(asRows<DbRow>(result)[0]?.nav_per_share as string | undefined);
+    return reference > 0n ? ratioPercent(navPerShare - reference, reference) : null;
+  };
   const markets = asRows<DbRow>(marketResult).map((row) => {
     const liability = fixed(row.liability as string | undefined);
     const hedgeUnits = fixed(row.hedge_units as string | undefined);
@@ -51,6 +60,8 @@ export async function vaultSnapshot(deps: ApiDependencies) {
     publicDeposits: vault.public_deposits === true,
     markets,
     change7dPct: priorNavPerShare > 0n ? ratioPercent(navPerShare - priorNavPerShare, priorNavPerShare) : 0,
+    change30dPct: referenceChange(change30dResult),
+    changeSinceInceptionPct: referenceChange(inceptionResult),
     depositCapRemaining: decimal(fixed(vault.deposit_cap_remaining as string | undefined)),
   };
 }

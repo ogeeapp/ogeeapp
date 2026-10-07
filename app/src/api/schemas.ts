@@ -84,7 +84,8 @@ export const vaultResponseSchema = z.object({
   nav: decimal, navPerShare: decimal, totalSupply: decimal, usdg: decimal, totalLiability: decimal,
   utilizationPct: percent, maxGlobalExposurePct: percent, publicDeposits: z.boolean(),
   markets: z.array(z.object({ symbol: z.string(), liability: decimal, hedgeUnits: decimal, hedgeTarget: decimal, hedgeValue: decimal, deltaPct: percent })),
-  change7dPct: percent, carryEarned30d: decimal.optional(), depositCapRemaining: decimal,
+  change7dPct: percent, change30dPct: percent.nullable(), changeSinceInceptionPct: percent.nullable(),
+  carryEarned30d: decimal.optional(), depositCapRemaining: decimal,
 });
 export const vaultHistorySchema = z.array(z.object({ t: z.number().int(), navPerShare: decimal, nav: decimal }));
 export const corpActionsSchema = z.array(z.object({ id: z.string(), symbol: z.string(), kind: z.string(), status: z.string(),
