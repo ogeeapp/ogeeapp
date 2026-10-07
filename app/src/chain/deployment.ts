@@ -50,6 +50,11 @@ const deploymentSchema = z.object({
       feed: addressSchema,
       scale: scaleSchema,
       poolFee: z.number().int().nonnegative(),
+      listing: z.object({
+        transactionHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/),
+        blockNumber: z.number().int().positive().safe(),
+        blockHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/),
+      }).optional(),
     }),
   ),
 });
