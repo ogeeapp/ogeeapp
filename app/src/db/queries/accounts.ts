@@ -1,4 +1,5 @@
 import { fixed, decimal, divide, multiply, projectNormFactor, priceAtNormFactor } from "../../lib/fixed";
+import { addAtCost, emptyCostState, removeAtAverageCost, type CostState } from "./cost-ledger";
 import { apiNow } from "../../api/clock";
 import type { ApiDependencies, DbRow } from "../../api/types";
 import { asRows, dateValue, numberValue } from "../../api/types";
@@ -21,12 +22,6 @@ interface PortfolioEvent extends DbRow {
   price: string;
   block: string | number | bigint;
   log_index: number | string;
-}
-
-interface CostState {
-  quantity: bigint;
-  cost: bigint;
-  realized: bigint;
 }
 
 // Addresses are stored lowercase by the indexer and lowercased by the route
@@ -90,16 +85,14 @@ export async function accountPortfolio(deps: ApiDependencies, rawAddress: string
   if (!historyComplete) ledger = ledger.slice(ledger.length - PORTFOLIO_EVENT_LIMIT);
   for (const event of ledger) {
     const marketId = numberValue(event.market_id);
-    const state = costs.get(marketId) ?? { quantity: 0n, cost: 0n, realized: 0n };
+    const state = costs.get(marketId) ?? emptyCostState();
     const quantity = fixed(event.quantity);
     if (event.event_kind === "trade" && event.side === "buy" && event.to_addr.toLowerCase() === address) {
-      state.quantity += quantity;
-      state.cost += event.from_addr.toLowerCase() === address ? fixed(event.usdg) : multiply(quantity, fixed(event.price));
+      addAtCost(state, quantity, event.from_addr.toLowerCase() === address ? fixed(event.usdg) : multiply(quantity, fixed(event.price)));
     } else if (event.event_kind === "trade" && event.side === "sell" && event.from_addr.toLowerCase() === address) {
       state.realized += fixed(event.usdg) - removeAtAverageCost(state, quantity);
     } else if (event.event_kind === "transfer" && event.from_addr.toLowerCase() !== address && event.to_addr.toLowerCase() === address) {
-      state.quantity += quantity;
-      state.cost += multiply(quantity, fixed(event.price));
+      addAtCost(state, quantity, multiply(quantity, fixed(event.price)));
     } else if (event.event_kind === "transfer" && event.from_addr.toLowerCase() === address && event.to_addr.toLowerCase() !== address) {
       removeAtAverageCost(state, quantity);
     }
@@ -113,7 +106,7 @@ export async function accountPortfolio(deps: ApiDependencies, rawAddress: string
   const responsePositions = positions.map((position) => {
     const marketId = numberValue(position.id);
     const rawMarket = marketById.get(marketId);
-    const state = costs.get(marketId) ?? { quantity: 0n, cost: 0n, realized: 0n };
+    const state = costs.get(marketId) ?? emptyCostState();
     const balance = fixed(position.balance);
     const tickTs = dateValue(rawMarket?.ts);
     const norm = rawMarket?.norm_factor as string | undefined;
@@ -151,15 +144,6 @@ export async function accountPortfolio(deps: ApiDependencies, rawAddress: string
     totals: { powerValue: decimal(powerValue), unrealizedPnl: decimal(unrealizedTotal), realizedPnl: decimal(realizedTotal) },
     historyComplete,
   };
-}
-
-function removeAtAverageCost(state: CostState, requested: bigint): bigint {
-  if (state.quantity <= 0n || requested <= 0n) return 0n;
-  const quantity = requested < state.quantity ? requested : state.quantity;
-  const cost = quantity === state.quantity ? state.cost : (state.cost * quantity) / state.quantity;
-  state.quantity -= quantity;
-  state.cost -= cost;
-  return cost;
 }
 
 interface ActivityRow extends DbRow {
