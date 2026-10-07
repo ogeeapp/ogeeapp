@@ -27,6 +27,10 @@ app/         Bun services: API, indexer, keeper, migrations
 
 `PowerEngine`, `CrabVault` and `MarketHours` are UUPS upgradeable. OpenZeppelin v5.4.0 and forge-std v1.9.7 are vendored in `contracts/lib`.
 
+### OGEE token
+
+Contract on Robinhood Chain: [`0x1d2586813cdcf17dec56b19c1c09d0ced050c799`](https://robinhoodchain.blockscout.com/address/0x1d2586813cdcf17dec56b19c1c09d0ced050c799).
+
 ### Mainnet deployment
 
 Robinhood Chain mainnet (chain ID `4663`), deployed at block `78474037`; engine and vault upgraded at block `80776543` (implementations below). All contracts below are verified on [Sourcify](https://sourcify.dev) (full match). Explorer: [robinhoodchain.blockscout.com](https://robinhoodchain.blockscout.com).
