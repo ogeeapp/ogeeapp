@@ -26,10 +26,13 @@ jobs:
       - name: Post-deploy check
         env:
           RPC_URL: ${{ secrets.RPC_URL || 'https://rpc.mainnet.chain.robinhood.com' }}
-          ADMIN: ${{ vars.OGEE_ADMIN }}
-          KEEPER: ${{ vars.OGEE_KEEPER }}
-          TIMELOCK: ${{ vars.OGEE_TIMELOCK }}
-          SAFE: ${{ vars.OGEE_SAFE }}
+          # Since the 2026-10-07 handoff the timelock is the only admin and the Safe its proposer/executor/canceller.
+          # The former admin EOA must hold no role; guardians are the keeper and the Safe.
+          KEEPER: ${{ vars.OGEE_KEEPER || '0xe88f2aAA0653016d5147741262C8FEb496562E48' }}
+          TIMELOCK: ${{ vars.OGEE_TIMELOCK || '0x0F9304D40087B2c7616eA1229f0763E1BAD50aB5' }}
+          SAFE: ${{ vars.OGEE_SAFE || '0x66a60131AE3526F8533f7955C44e827Fa40Ab70b' }}
+          EXPECTED_GUARDIANS: ${{ vars.OGEE_GUARDIANS || '0xe88f2aAA0653016d5147741262C8FEb496562E48,0x66a60131AE3526F8533f7955C44e827Fa40Ab70b' }}
+          ROLE_CANDIDATES: "0x7C68924928CE35Db1040D13aF029bccDE80Aa93c"
           # No Chainlink sequencer uptime feed exists for Robinhood Chain yet; report it as a warning.
           ALLOW_UNSET_SEQUENCER_FEED: "1"
         run: forge script script/PostDeployCheck.s.sol --rpc-url "$RPC_URL"
