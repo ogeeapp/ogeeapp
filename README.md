@@ -2,7 +2,7 @@
 
 Smart contracts and backend services for OGEE: squared ("power") exposure to stock tokens on Robinhood Chain (chain ID `4663`).
 
-Each market tracks `price² / scale` of a Robinhood stock token (NVDA, TSLA, SPY, PLTR, AAPL). Users buy and sell market tokens with USDG. One vault (`CRAB`) takes the other side of every trade and hedges with the underlying stock on Uniswap v3.
+Each market tracks `price² / scale` of a Robinhood stock token (NVDA, TSLA, SPY, PLTR, AAPL, AMD, QQQ). Users buy and sell market tokens with USDG. One vault (`CRAB`) takes the other side of every trade and hedges with the underlying stock on Uniswap v3.
 
 ## Layout
 
@@ -33,7 +33,7 @@ Contract on Robinhood Chain: [`0x1d2586813cdcf17dec56b19c1c09d0ced050c799`](http
 
 ### Mainnet deployment
 
-Robinhood Chain mainnet (chain ID `4663`), deployed at block `78474037`; engine and vault upgraded at block `80776543` (implementations below). All contracts below are verified on [Sourcify](https://sourcify.dev) (full match). Explorer: [robinhoodchain.blockscout.com](https://robinhoodchain.blockscout.com).
+Robinhood Chain mainnet (chain ID `4663`), deployed at block `78474037`; engine and vault upgraded at block `80776543` (implementations below). The original deployment contracts are verified on [Sourcify](https://sourcify.dev) (full match). Explorer: [robinhoodchain.blockscout.com](https://robinhoodchain.blockscout.com).
 
 | Contract | Address |
 | --- | --- |
@@ -59,6 +59,8 @@ Markets (`PowerToken` per market, and the stock token it tracks):
 | SPY | [`0xfb4EF44DdDcC4b24Ba5ea9789741b2817537b35b`](https://robinhoodchain.blockscout.com/address/0xfb4EF44DdDcC4b24Ba5ea9789741b2817537b35b) | `0x117cc2133c37B721F49dE2A7a74833232B3B4C0C` |
 | PLTR | [`0xF00ee0133c66bfcfAC087fCc226638D5a69e4B4e`](https://robinhoodchain.blockscout.com/address/0xF00ee0133c66bfcfAC087fCc226638D5a69e4B4e) | `0x894E1EC2D74FFE5AEF8Dc8A9e84686acCB964F2A` |
 | AAPL | [`0x9122bC8A36DCBC965aD86574D421b44B7F8e211E`](https://robinhoodchain.blockscout.com/address/0x9122bC8A36DCBC965aD86574D421b44B7F8e211E) | `0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9` |
+| AMD | [`0x278ada8f483917d869114f885cd1e64abb441b64`](https://robinhoodchain.blockscout.com/address/0x278ada8f483917d869114f885cd1e64abb441b64) | `0x86923f96303D656E4aa86D9d42D1e57ad2023fdC` |
+| QQQ | [`0xf1c33069c3a0a54f117ff333e0e6c0043f95abbf`](https://robinhoodchain.blockscout.com/address/0xf1c33069c3a0a54f117ff333e0e6c0043f95abbf) | `0xD5f3879160bc7c32ebb4dC785F8a4F505888de68` |
 
 Always talk to the proxy addresses; implementations change on upgrade. Current addresses are also served by the API at `/v1/config`.
 
