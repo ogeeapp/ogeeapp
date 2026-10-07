@@ -5,6 +5,19 @@ export interface Session {
   close: bigint;
 }
 
+export function parseStoredSessions(value: unknown): Session[] | undefined {
+  if (!Array.isArray(value) || !value.length) return undefined;
+  const sessions: Session[] = [];
+  for (const item of value) {
+    if (!item || typeof item.open !== "string" || typeof item.close !== "string"
+      || !/^\d+$/.test(item.open) || !/^\d+$/.test(item.close)) return undefined;
+    const session = { open: BigInt(item.open), close: BigInt(item.close) };
+    if (session.close <= session.open || (sessions.length && session.open < sessions.at(-1)!.close)) return undefined;
+    sessions.push(session);
+  }
+  return sessions;
+}
+
 const DAY = 86_400_000;
 const ny = new Intl.DateTimeFormat("en-CA", {
   timeZone: "America/New_York",

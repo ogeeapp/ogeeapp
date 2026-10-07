@@ -1,23 +1,10 @@
 import { encodeFunctionData, keccak256, stringToHex } from "viem";
 import { MarketHoursAbi as marketHoursAbi } from "../../abi/MarketHours";
-import { computeSessions, type Session } from "../sessions";
+import { computeSessions, parseStoredSessions, type Session } from "../sessions";
 import type { KeeperContext } from "../context";
 
 export function sessionHash(sessions: Session[]): string {
   return keccak256(stringToHex(JSON.stringify(sessions.map((s) => [s.open.toString(), s.close.toString()]))));
-}
-
-function storedSessions(value: unknown): Session[] | undefined {
-  if (!Array.isArray(value) || !value.length) return undefined;
-  const sessions: Session[] = [];
-  for (const item of value) {
-    if (!item || typeof item.open !== "string" || typeof item.close !== "string"
-      || !/^\d+$/.test(item.open) || !/^\d+$/.test(item.close)) return undefined;
-    const session = { open: BigInt(item.open), close: BigInt(item.close) };
-    if (session.close <= session.open || (sessions.length && session.open < sessions.at(-1)!.close)) return undefined;
-    sessions.push(session);
-  }
-  return sessions;
 }
 
 // Compare trading hours only in the window already covered by BOTH calendars.
@@ -36,7 +23,7 @@ export async function updateSessions(context: KeeperContext): Promise<Record<str
   const sessionsHash = sessionHash(sessions);
   const rows = await context.sql<{ meta: Record<string, unknown> }[]>`select meta from keeper_status where job = 'sessions'`;
   const prior = rows[0]?.meta ?? {};
-  const stored = storedSessions(prior.sessions);
+  const stored = parseStoredSessions(prior.sessions);
   const nowSeconds = BigInt(Math.floor(now.getTime() / 1000));
   const horizon = stored?.at(-1)?.close ?? 0n;
   const nextHorizon = sessions.at(-1)?.close ?? 0n;
