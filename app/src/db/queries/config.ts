@@ -1,6 +1,8 @@
 import type { ApiDependencies } from "../../api/types";
 import { asRows, numberValue } from "../../api/types";
 
+export const EXPLORER_URL = "https://robinhoodchain.blockscout.com";
+
 export async function runtimeConfigResponse(deps: ApiDependencies) {
   const rows = asRows<Record<string, unknown>>(await deps.sql`
     select id, symbol, token, stock from markets order by id
@@ -21,7 +23,7 @@ export async function runtimeConfigResponse(deps: ApiDependencies) {
       ? { forkProof: deps.deployment.forkProof }
       : {}),
     rpcUrl: deps.config.PUBLIC_RPC_URL,
-    explorerUrl: "https://robinhoodchain.blockscout.com",
+    explorerUrl: EXPLORER_URL,
     contracts: {
       engine: deps.deployment.contracts.engine,
       vault: deps.deployment.contracts.vault,
