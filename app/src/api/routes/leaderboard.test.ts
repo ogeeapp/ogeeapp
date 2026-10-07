@@ -53,3 +53,32 @@ test("leaderboard rejects unknown ranges and limits", async () => {
   expect((await app.request("/v1/leaderboard?sort=pnl")).status).toBe(400);
   expect((await app.request("/v1/leaderboard?limit=101")).status).toBe(400);
 });
+
+test("leaderboard reports the requested wallet's rank beyond the limit", async () => {
+  const response = await appWith([]).request(`/v1/leaderboard?limit=2&address=${third.toUpperCase().replace("0X", "0x")}`);
+  expect(response.headers.get("cache-control")).toBe("private, max-age=30");
+  const body = await response.json() as { rows: unknown[]; you: { rank: number; address: string } | null };
+  expect(body.rows).toHaveLength(2);
+  expect(body.you).toMatchObject({ rank: 3, address: third, volumeUsd: "5", trades: 1 });
+});
+
+test("leaderboard returns no rank for a wallet without trades", async () => {
+  const response = await appWith([]).request("/v1/leaderboard?address=0x4444444444444444444444444444444444444444");
+  expect((await response.json() as { you: unknown }).you).toBeNull();
+  expect((await (await appWith([]).request("/v1/leaderboard")).json() as { you: unknown }).you).toBeNull();
+});
+
+test("leaderboard rejects an invalid address", async () => {
+  expect((await appWith([]).request("/v1/leaderboard?address=nope")).status).toBe(400);
+});
+
+test("leaderboard shares one cached ranking across wallets", async () => {
+  const calls: string[] = [];
+  const app = appWith(calls);
+  await app.request(`/v1/leaderboard?address=${first}`);
+  await app.request(`/v1/leaderboard?address=${second}`);
+  await app.request("/v1/leaderboard");
+  expect(calls).toHaveLength(1);
+  await app.request("/v1/leaderboard?sort=trades");
+  expect(calls).toHaveLength(2);
+});

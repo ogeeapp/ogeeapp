@@ -115,11 +115,12 @@ export const leaderboardQuery = z.object({
   range: boardRange.default("7D"),
   sort: boardSort.default("volume"),
   limit: z.coerce.number().int().min(1).max(100).default(50),
+  address: z.string().refine((value) => isAddress(value, { strict: false }), "Invalid EVM address").transform((value) => value.toLowerCase()).optional(),
 });
 const leaderboardRowSchema = z.object({ rank: z.number().int().positive(), address: z.string(), volumeUsd: decimal,
   trades: count, markets: count, topMarket: z.string().nullable(), lastTradeAt: isoDateTime });
 export const leaderboardResponseSchema = z.object({ range: boardRange, sort: boardSort,
-  totalTraders: count, rows: z.array(leaderboardRowSchema), generatedAt: isoDateTime });
+  totalTraders: count, rows: z.array(leaderboardRowSchema), you: leaderboardRowSchema.nullable(), generatedAt: isoDateTime });
 
 export const symbolParams = z.object({ symbol: z.string().min(1).max(16).transform((value) => value.toUpperCase()) });
 export const addressParams = z.object({ address: z.string().refine((value) => isAddress(value, { strict: false }), "Invalid EVM address").transform((value) => value.toLowerCase()) });
