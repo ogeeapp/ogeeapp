@@ -1,5 +1,6 @@
 import { fixed, decimal, divide, multiply, projectNormFactor, priceAtNormFactor } from "../../lib/fixed";
-import { addAtCost, emptyCostState, removeAtAverageCost, type CostState } from "./cost-ledger";
+import { emptyCostState } from "./cost-ledger";
+import { powerLedgerEvents, replayPowerLedger } from "./power-ledger";
 import { vaultCostBasis, vaultLedger } from "./vault-ledger";
 import { apiNow } from "../../api/clock";
 import type { ApiDependencies, DbRow } from "../../api/types";
@@ -12,27 +13,13 @@ interface PositionRow extends DbRow {
   balance: string;
 }
 
-interface PortfolioEvent extends DbRow {
-  event_kind: "trade" | "transfer";
-  market_id: number | string;
-  side: string | null;
-  from_addr: string;
-  to_addr: string;
-  quantity: string;
-  usdg: string;
-  price: string;
-  block: string | number | bigint;
-  log_index: number | string;
-}
-
 // Addresses are stored lowercase by the indexer and lowercased by the route
 // schema, so queries compare columns directly and can use their indexes.
 function normalizeAddress(address: string): string {
   return address.toLowerCase();
 }
 
-/** Cap on the trade/transfer ledger replayed for cost basis, newest first. */
-export const PORTFOLIO_EVENT_LIMIT = 5_000;
+export { PORTFOLIO_EVENT_LIMIT } from "./power-ledger";
 
 export async function accountPortfolio(deps: ApiDependencies, rawAddress: string) {
   const address = normalizeAddress(rawAddress);
@@ -42,37 +29,13 @@ export async function accountPortfolio(deps: ApiDependencies, rawAddress: string
     where b.account = ${address} and b.balance > 0 order by m.id
   `;
   const positions = asRows<PositionRow>(positionsResult);
-  const [marketResult, eventResult, crabResult, vaultResult, accountStateResult, crabEvents] = await Promise.all([
+  const [marketResult, ledger, crabResult, vaultResult, accountStateResult, crabEvents] = await Promise.all([
     deps.sql`
       select m.id, t.ts, t.norm_factor, t.price, t.carry_wad
       from markets m left join lateral (select * from ticks where market_id = m.id order by ts desc limit 1) t on true
       order by m.id
     `,
-    // Newest PORTFOLIO_EVENT_LIMIT ledger rows, replayed oldest first. Each
-    // branch is bounded first so the per-column account indexes are used.
-    deps.sql`
-      select * from (
-        select * from (
-          select 'trade'::text as event_kind, market_id, side, account as from_addr, recipient as to_addr,
-            tokens::text as quantity, usdg::text, price::text, block, log_index
-          from trades where account = ${address}
-          union
-          select 'trade'::text, market_id, side, account, recipient, tokens::text, usdg::text, price::text, block, log_index
-          from trades where recipient = ${address}
-          order by block desc, log_index desc limit ${PORTFOLIO_EVENT_LIMIT + 1}
-        ) trade_rows
-        union all
-        select * from (
-          select 'transfer'::text as event_kind, market_id, null::text as side, from_addr, to_addr,
-            amount::text as quantity, '0'::text as usdg,
-            coalesce((select price from ticks where ticks.market_id = transfers.market_id and ticks.block <= transfers.block order by ticks.block desc, ticks.ts desc limit 1), 0)::text as price,
-            block, log_index
-          from transfers where market_id is not null and (from_addr = ${address} or to_addr = ${address})
-          order by block desc, log_index desc limit ${PORTFOLIO_EVENT_LIMIT + 1}
-        ) transfer_rows
-        order by block desc, log_index desc limit ${PORTFOLIO_EVENT_LIMIT + 1}
-      ) ledger order by block, log_index
-    `,
+    powerLedgerEvents(deps, address),
     deps.sql`select balance::text from balances where account = ${address} and token = ${deps.deployment.contracts.vault.toLowerCase()} limit 1`,
     deps.sql`select nav_per_share::text from vault_ticks order by ts desc limit 1`,
     deps.sql`select is_depositor, unlock_time from vault_account_state where account = ${address} limit 1`,
@@ -80,26 +43,8 @@ export async function accountPortfolio(deps: ApiDependencies, rawAddress: string
   ]);
   const marketRows = asRows<DbRow>(marketResult);
   const marketById = new Map(marketRows.map((row) => [numberValue(row.id), row]));
-  const costs = new Map<number, CostState>();
-  let ledger = asRows<PortfolioEvent>(eventResult);
-  const historyComplete = ledger.length <= PORTFOLIO_EVENT_LIMIT;
-  // Drop the oldest row of the over-fetch: it only signals truncation.
-  if (!historyComplete) ledger = ledger.slice(ledger.length - PORTFOLIO_EVENT_LIMIT);
-  for (const event of ledger) {
-    const marketId = numberValue(event.market_id);
-    const state = costs.get(marketId) ?? emptyCostState();
-    const quantity = fixed(event.quantity);
-    if (event.event_kind === "trade" && event.side === "buy" && event.to_addr.toLowerCase() === address) {
-      addAtCost(state, quantity, event.from_addr.toLowerCase() === address ? fixed(event.usdg) : multiply(quantity, fixed(event.price)));
-    } else if (event.event_kind === "trade" && event.side === "sell" && event.from_addr.toLowerCase() === address) {
-      state.realized += fixed(event.usdg) - removeAtAverageCost(state, quantity);
-    } else if (event.event_kind === "transfer" && event.from_addr.toLowerCase() !== address && event.to_addr.toLowerCase() === address) {
-      addAtCost(state, quantity, multiply(quantity, fixed(event.price)));
-    } else if (event.event_kind === "transfer" && event.from_addr.toLowerCase() === address && event.to_addr.toLowerCase() !== address) {
-      removeAtAverageCost(state, quantity);
-    }
-    costs.set(marketId, state);
-  }
+  const { costs } = replayPowerLedger(ledger.events, address);
+  const historyComplete = ledger.historyComplete;
 
   const now = await apiNow(deps);
   let powerValue = 0n;
