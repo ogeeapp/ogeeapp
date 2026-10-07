@@ -95,6 +95,8 @@ export const corpActionsSchema = z.array(z.object({ id: z.string(), symbol: z.st
   processDate: z.string().nullable(), effectiveAt: isoDateTime.nullable(), oldMultiplier: decimal.nullable(), newMultiplier: decimal.nullable(),
   verifiedContinuity: z.boolean().nullable(), details: z.record(z.string(), z.unknown()) }));
 export const statsResponseSchema = z.object({ openInterestUsd: decimal, volume24hUsd: decimal, trades24h: z.number().int().nonnegative(), tvlUsd: decimal,
+  fees24hUsd: decimal, uniqueTraders24h: z.number().int().nonnegative(), volumeAllTimeUsd: decimal,
+  tradesAllTime: z.number().int().nonnegative(), tradersAllTime: z.number().int().nonnegative(),
   markets: z.array(z.object({ symbol: z.string(), price: decimal, dailyCarryPct: percent, regime: z.enum(["open", "off_hours", "paused"]) })) });
 
 const count = z.number().int().nonnegative();
