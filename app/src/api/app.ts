@@ -6,6 +6,7 @@ import { registerAccountRoutes } from "./routes/accounts";
 import { registerConfigRoutes } from "./routes/config";
 import { registerCorporateActionRoutes } from "./routes/corp-actions";
 import { registerHealthRoutes } from "./routes/health";
+import { registerLeaderboardRoutes } from "./routes/leaderboard";
 import { registerMarketRoutes } from "./routes/markets";
 import { registerStatsRoutes } from "./routes/stats";
 import { registerVaultRoutes } from "./routes/vault";
@@ -53,6 +54,7 @@ export function createApiApp(deps: ApiDependencies) {
   registerVaultRoutes(app, deps);
   registerCorporateActionRoutes(app, deps);
   registerStatsRoutes(app, deps);
+  registerLeaderboardRoutes(app, deps);
 
   app.get("/v1/openapi.json", (context) => {
     try {

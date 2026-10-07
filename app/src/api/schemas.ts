@@ -109,6 +109,18 @@ export const statsHistoryResponseSchema = z.object({
   markets: z.array(z.object({ symbol: z.string(), volumeUsd: decimal, trades: count, sharePct: percent })),
 });
 
+const boardRange = z.enum(["7D", "30D", "ALL"]);
+const boardSort = z.enum(["volume", "trades"]);
+export const leaderboardQuery = z.object({
+  range: boardRange.default("7D"),
+  sort: boardSort.default("volume"),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+const leaderboardRowSchema = z.object({ rank: z.number().int().positive(), address: z.string(), volumeUsd: decimal,
+  trades: count, markets: count, topMarket: z.string().nullable(), lastTradeAt: isoDateTime });
+export const leaderboardResponseSchema = z.object({ range: boardRange, sort: boardSort,
+  totalTraders: count, rows: z.array(leaderboardRowSchema), generatedAt: isoDateTime });
+
 export const symbolParams = z.object({ symbol: z.string().min(1).max(16).transform((value) => value.toUpperCase()) });
 export const addressParams = z.object({ address: z.string().refine((value) => isAddress(value, { strict: false }), "Invalid EVM address").transform((value) => value.toLowerCase()) });
 export const rangeQuery = z.object({ range: z.enum(["1H", "4H", "1D", "1W", "1M", "ALL"]).default("1D"), series: z.enum(["price", "index"]).default("price") });
