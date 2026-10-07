@@ -2,6 +2,7 @@ import { fixed, decimal, fromBps, projectNormFactor, priceAtNormFactor, changePe
 import { apiNow } from "../../api/clock";
 import type { ApiDependencies, DbRow } from "../../api/types";
 import { asRows, dateValue, jsonRecord, numberValue, textValue } from "../../api/types";
+import { marketSession, type MarketSession } from "./sessions";
 import { regimeName } from "./shared";
 
 interface MarketRawRow extends DbRow {
@@ -46,6 +47,7 @@ export interface MarketView {
   symbol: string;
   token: string;
   regime: "open" | "off_hours" | "paused";
+  session: MarketSession;
   buysPaused: boolean;
   spot: string;
   index: string;
@@ -127,7 +129,7 @@ export async function listMarkets(deps: ApiDependencies, requestedNow?: Date): P
   const rawMarkets = asRows<MarketRawRow>(marketResult);
   if (rawMarkets.length === 0) return [];
 
-  const [vaultResult, sparkResult, corpResult] = await Promise.all([
+  const [vaultResult, sparkResult, corpResult, sessionResult] = await Promise.all([
     deps.sql`select nav, total_liability, max_global_exposure_bps from vault_ticks order by ts desc limit 1`,
     deps.sql`
       select market_id, floor(extract(epoch from bucket))::bigint as t, price from (
@@ -146,7 +148,10 @@ export async function listMarkets(deps: ApiDependencies, requestedNow?: Date): P
         case when lower(status) in ('in_progress', 'processing') then 0 else 1 end,
         effective_at asc nulls last, process_date asc nulls last, updated_at desc
     `,
+    marketSession(deps, now),
   ]);
+  const { open, opensAt, closesAt } = sessionResult;
+  const session = { open, opensAt, closesAt };
   const vaultRows = asRows<DbRow>(vaultResult);
   const sparkRows = asRows<SparkRow>(sparkResult);
   const corpRows = asRows<CorpActionRow>(corpResult);
@@ -214,6 +219,7 @@ export async function listMarkets(deps: ApiDependencies, requestedNow?: Date): P
       symbol: row.symbol,
       token: row.token.toLowerCase(),
       regime,
+      session,
       buysPaused: row.buys_paused === true,
       spot: textValue(row.spot, "0"),
       index: textValue(row.index, "0"),
