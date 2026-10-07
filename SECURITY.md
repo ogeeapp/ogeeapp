@@ -27,15 +27,15 @@ and each `PowerToken` have no owner.
 
 | Role | Contract | Can | Cannot | Holder |
 | --- | --- | --- | --- | --- |
-| `DEFAULT_ADMIN_ROLE` | Engine, vault, hours | Upgrade the proxy; list markets and change their risk config within `EngineHelper.validate` bounds; `setGlobal` (exposure cap 10–100%, treasury fee share ≤ 50%, treasury, sequencer feed); set hedge routes, the TWAP price reference, vault parameters (lock ≤ 30 days, slippage ≤ 5%, NAV guard ≤ 20%), deposit allowlist and deposit cap; resync hedge units; grant and revoke roles | Move user or LP funds directly (only through an upgrade) | EOA `0x7C68924928CE35Db1040D13aF029bccDE80Aa93c` today. Planned: a `TimelockController` with a 48-hour delay whose proposer, executor and canceller is a Safe (`contracts/script/TimelockHandoff.s.sol`) |
+| `DEFAULT_ADMIN_ROLE` | Engine, vault, hours | Upgrade the proxy; list markets and change their risk config within `EngineHelper.validate` bounds; `setGlobal` (exposure cap 10–100%, treasury fee share ≤ 50%, treasury, sequencer feed); set hedge routes, the TWAP price reference, vault parameters (lock ≤ 30 days, slippage ≤ 5%, NAV guard ≤ 20%), deposit allowlist and deposit cap; resync hedge units; grant and revoke roles | Move user or LP funds directly (only through an upgrade) | `TimelockController` `0x0F9304D40087B2c7616eA1229f0763E1BAD50aB5` (48-hour minimum delay, self-administered). Its only proposer, executor and canceller is the 2-of-3 Safe `0x66a60131AE3526F8533f7955C44e827Fa40Ab70b`. The former admin EOA renounced every role on 2026-10-07 |
 | `KEEPER_ROLE` | Engine | Change a market's base carry by at most 25% per 24 hours, inside the admin bounds | Anything else | Keeper EOA `0xe88f2aAA0653016d5147741262C8FEb496562E48` |
-| `KEEPER_ROLE` | Vault | `rebalance` a market's hedge toward the engine's delta target (each swap bounded by `maxHedgeSlippageBps` and the oracle price) | Withdraw funds, change parameters | Keeper EOA; the admin also received it at initialization (revoked in the timelock handoff) |
+| `KEEPER_ROLE` | Vault | `rebalance` a market's hedge toward the engine's delta target (each swap bounded by `maxHedgeSlippageBps` and the oracle price) | Withdraw funds, change parameters | Keeper EOA (the admin's copy from initialization was renounced in the timelock handoff) |
 | `KEEPER_ROLE` | MarketHours | Push the session calendar (at most 32 sessions, each at most 5 days + 1 hour, at most 30 days ahead) | Open a market whose feed is invalid or older than `maxAgeOpen` | Keeper EOA |
-| `GUARDIAN_ROLE` | Engine | Pause buys for one market or globally | Pause sells, LP exits or anything else | Keeper EOA (fast response; deliberately outside the timelock because it can only reduce risk) |
+| `GUARDIAN_ROLE` | Engine | Pause buys for one market or globally | Pause sells, LP exits or anything else | Keeper EOA and the Safe (fast response; deliberately outside the timelock because it can only reduce risk) |
 
-The admin is the single largest risk: until the timelock handoff is executed, a compromised admin key can upgrade the
-proxies. Moving the admin behind a 48-hour timelock and a Safe is the first operational step after the upgrade that
-ships these fixes.
+Every admin action (upgrades included) is scheduled by the Safe on the public timelock and can only be executed by the
+Safe 48 hours later, so users can see a pending change and exit first. A compromised single owner key can do nothing on
+its own; the Safe can cancel any pending operation.
 
 ## Trust assumptions
 
@@ -70,7 +70,7 @@ ships these fixes.
 | Draining via paused sells | Per-market leaky-bucket cap on paused-sell volume |
 | Reentrancy | Transient reentrancy guards on every state-changing entry point; vault payments only to the engine's recipient |
 | Malicious or compromised keeper | Bounded carry steps and calendar; rebalances bounded by oracle and slippage; cannot move funds. It could mark closed hours as open, which applies open spreads and the 26-hour open max age to a held price; the guardian (buy pause) and admin can respond, and the calendar is public |
-| Compromised admin | Today: full control through upgrades. After handoff: 48-hour public timelock, Safe threshold, users can exit (sells are never pausable) |
+| Compromised admin | 2-of-3 Safe threshold, then a 48-hour public timelock during which users can exit (sells are never pausable) and the Safe can cancel |
 | Service abuse (API) | Per-IP rate limit, indexed queries, capped histories, read-only database sessions |
 | Stuck keeper | Rejected broadcasts release their nonce; fresh fees per attempt; not-ready health signal; single signer through a Postgres advisory lock |
 
