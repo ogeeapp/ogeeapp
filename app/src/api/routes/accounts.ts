@@ -1,7 +1,8 @@
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import type { ApiDependencies } from "../types";
-import { activityQuery, activityResponseSchema, addressParams, portfolioResponseSchema } from "../schemas";
+import { accountStatsResponseSchema, activityQuery, activityResponseSchema, addressParams, portfolioResponseSchema } from "../schemas";
 import { accountActivity, accountPortfolio } from "../../db/queries/accounts";
+import { accountStats } from "../../db/queries/account-stats";
 
 const portfolioRoute = createRoute({
   method: "get", path: "/v1/accounts/{address}/portfolio", tags: ["accounts"], request: { params: addressParams },
@@ -10,6 +11,10 @@ const portfolioRoute = createRoute({
 const activityRoute = createRoute({
   method: "get", path: "/v1/accounts/{address}/activity", tags: ["accounts"], request: { params: addressParams, query: activityQuery },
   responses: { 200: { description: "Cursor-paginated wallet activity", content: { "application/json": { schema: activityResponseSchema } } } },
+});
+const statsRoute = createRoute({
+  method: "get", path: "/v1/accounts/{address}/stats", tags: ["accounts"], request: { params: addressParams },
+  responses: { 200: { description: "Lifetime trading statistics for a wallet", content: { "application/json": { schema: accountStatsResponseSchema } } } },
 });
 
 export function registerAccountRoutes(app: OpenAPIHono, deps: ApiDependencies): void {
@@ -23,5 +28,10 @@ export function registerAccountRoutes(app: OpenAPIHono, deps: ApiDependencies): 
     const { address } = context.req.valid("param");
     const { type, cursor, limit } = context.req.valid("query");
     return context.json(await accountActivity(deps, address, type, cursor, limit), 200);
+  });
+  app.openapi(statsRoute, async (context) => {
+    context.header("Cache-Control", "private, max-age=15");
+    const { address } = context.req.valid("param");
+    return context.json(await deps.cache.getOrLoad(`accounts:stats:${address}`, 10_000, () => accountStats(deps, address)), 200);
   });
 }

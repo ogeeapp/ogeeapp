@@ -122,6 +122,17 @@ const leaderboardRowSchema = z.object({ rank: z.number().int().positive(), addre
 export const leaderboardResponseSchema = z.object({ range: boardRange, sort: boardSort,
   totalTraders: count, rows: z.array(leaderboardRowSchema), you: leaderboardRowSchema.nullable(), generatedAt: isoDateTime });
 
+const closeSummarySchema = z.object({ symbol: z.string(), realizedPnlUsd: decimal, ts: isoDateTime, txHash: z.string() });
+export const accountStatsResponseSchema = z.object({
+  volumeUsd: decimal, feesPaidUsd: decimal, trades: count, buys: count, sells: count, marketsTraded: count, activeDays: count,
+  firstTradeAt: isoDateTime.nullable(), lastTradeAt: isoDateTime.nullable(),
+  realizedPnlUsd: decimal, closedTrades: count, winningTrades: count, winRatePct: percent.nullable(),
+  bestTrade: closeSummarySchema.nullable(), worstTrade: closeSummarySchema.nullable(),
+  markets: z.array(z.object({ symbol: z.string(), volumeUsd: decimal, trades: count, realizedPnlUsd: decimal })),
+  /** False when the replayed ledger was capped to the newest entries. */
+  historyComplete: z.boolean(),
+});
+
 export const symbolParams = z.object({ symbol: z.string().min(1).max(16).transform((value) => value.toUpperCase()) });
 export const addressParams = z.object({ address: z.string().refine((value) => isAddress(value, { strict: false }), "Invalid EVM address").transform((value) => value.toLowerCase()) });
 export const rangeQuery = z.object({ range: z.enum(["1H", "4H", "1D", "1W", "1M", "ALL"]).default("1D"), series: z.enum(["price", "index"]).default("price") });
