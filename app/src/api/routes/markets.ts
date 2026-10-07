@@ -3,9 +3,10 @@ import { z } from "@hono/zod-openapi";
 import type { ApiDependencies } from "../types";
 import {
   candleSchema, carrySchema, errorResponseSchema, limitQuery, marketDetailResponseSchema,
-  marketListResponseSchema, regimeListSchema, rangeQuery, symbolParams, tradeListSchema,
+  marketHoldersResponseSchema, marketListResponseSchema, regimeListSchema, rangeQuery, symbolParams, tradeListSchema,
 } from "../schemas";
 import { marketCandles, marketCarry, getMarketDetail, listMarkets, marketRegimes, marketTrades } from "../../db/queries/markets";
+import { marketHolders } from "../../db/queries/holders";
 import { dateValue, textValue } from "../types";
 
 const cacheHeader = "public, max-age=5, stale-while-revalidate=30";
@@ -47,6 +48,13 @@ const regimesRoute = createRoute({
   method: "get", path: "/v1/markets/{symbol}/regimes", tags: ["markets"], request: { params: symbolParams, query: limitQuery },
   responses: {
     200: { description: "Recent market regime changes", content: { "application/json": { schema: regimeListSchema } } },
+    404: { description: "Unknown market symbol", content: { "application/json": { schema: errorResponseSchema } } },
+  },
+});
+const holdersRoute = createRoute({
+  method: "get", path: "/v1/markets/{symbol}/holders", tags: ["markets"], request: { params: symbolParams },
+  responses: {
+    200: { description: "Holder count, concentration and distribution", content: { "application/json": { schema: marketHoldersResponseSchema } } },
     404: { description: "Unknown market symbol", content: { "application/json": { schema: errorResponseSchema } } },
   },
 });
@@ -124,5 +132,13 @@ export function registerMarketRoutes(app: OpenAPIHono, deps: ApiDependencies): v
       to: label(row.to_regime),
       ts: dateValue(row.ts)?.toISOString() ?? "1970-01-01T00:00:00.000Z",
     })), 200);
+  });
+
+  app.openapi(holdersRoute, async (context) => {
+    context.header("Cache-Control", "public, max-age=30, stale-while-revalidate=120");
+    const { symbol } = context.req.valid("param");
+    const holders = await deps.cache.getOrLoad(`markets:holders:${symbol}`, 60_000, () => marketHolders(deps, symbol));
+    if (!holders) return context.json({ error: "NOT_FOUND", message: `Unknown market symbol: ${symbol}` }, 404);
+    return context.json(holders, 200);
   });
 }

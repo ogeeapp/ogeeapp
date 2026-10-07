@@ -73,6 +73,14 @@ export const regimeListSchema = z.array(z.object({
   txHash: z.string(), from: z.enum(["open", "off_hours", "paused"]), to: z.enum(["open", "off_hours", "paused"]), ts: isoDateTime,
 }));
 
+export const marketHoldersResponseSchema = z.object({
+  symbol: z.string(), priceUsd: decimal, asOf: isoDateTime,
+  holders: z.number().int().nonnegative(), totalSupply: decimal,
+  top1SharePct: percent.nullable(), top10SharePct: percent.nullable(), newHolders7d: z.number().int().nonnegative(),
+  distribution: z.array(z.object({ label: z.string(), minUsd: decimal, maxUsd: decimal.nullable(), holders: z.number().int().nonnegative(), supplySharePct: percent })),
+  topHolders: z.array(z.object({ rank: z.number().int().positive(), address: z.string(), balance: decimal, valueUsd: decimal, sharePct: percent })),
+});
+
 export const portfolioResponseSchema = z.object({
   positions: z.array(z.object({ symbol: z.string(), balance: decimal, price: decimal, value: decimal, avgCost: decimal,
     costBasis: decimal, unrealizedPnl: decimal, realizedPnl: decimal })),
