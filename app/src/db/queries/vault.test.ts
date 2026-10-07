@@ -4,7 +4,7 @@ import { vaultSnapshot } from "./vault";
 
 const DAY = 86_400_000;
 function depsFor(ticks: Array<{ ts: Date; nav_per_share: string }>) {
-  const ordered = ticks.toSorted((a, b) => b.ts.getTime() - a.ts.getTime());
+  const ordered = [...ticks].sort((a, b) => b.ts.getTime() - a.ts.getTime());
   return {
     config: { NETWORK: "mainnet" },
     sql: async (strings: TemplateStringsArray, ...values: unknown[]) => {
