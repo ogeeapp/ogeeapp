@@ -32,7 +32,7 @@ test("export rejects an invalid address", async () => {
 
 test("export downloads csv with history headers", async () => {
   const response = await appWith([
-    { kind: "buy", symbol: "NVDA", usdg: "10", tokens: "2", price: "5", ts: "2026-01-15T00:00:00.000Z", tx_hash: `0x${"a".repeat(64)}`, log_index: 1 },
+    { kind: "buy", symbol: "NVDA", usdg: "10", tokens: "2", price: "5", fee: "0.03", ts: "2026-01-15T00:00:00.000Z", tx_hash: `0x${"a".repeat(64)}`, log_index: 1 },
   ]).request(`/v1/accounts/${address}/export.csv?type=trades&from=2026-01-01&to=2026-01-31`);
   expect(response.status).toBe(200);
   expect(response.headers.get("content-type")).toBe("text/csv; charset=utf-8");

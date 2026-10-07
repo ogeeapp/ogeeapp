@@ -1,4 +1,6 @@
+import { decimal } from "../../lib/fixed";
 import { EXPLORER_URL } from "./config";
+import { powerLedgerEvents, replayPowerLedger, type RealizedFill } from "./power-ledger";
 import type { ApiDependencies, DbRow } from "../../api/types";
 import { asRows, dateValue } from "../../api/types";
 
@@ -13,6 +15,7 @@ export interface ExportActivityRow extends DbRow {
   usdg: string | null;
   tokens: string | null;
   price: string | null;
+  fee: string | null;
   ts: Date | string;
   tx_hash: string;
   log_index: number | string;
@@ -25,6 +28,9 @@ export const EXPORT_HEADER = [
   "Quantity",
   "Price (USDG)",
   "Amount (USDG)",
+  "Fee (USDG)",
+  "Cost basis (USDG)",
+  "Realized P&L (USDG)",
   "Transaction",
   "Explorer",
 ];
@@ -47,21 +53,21 @@ export async function exportActivityRows(
   const query = `with activity as (
     select case when t.side = 'buy' then 'buy' else 'sell' end::text as kind,
       m.symbol, t.usdg::text as usdg, t.tokens::text as tokens, t.price::text as price,
-      t.ts, t.tx_hash, t.log_index
+      t.fee::text as fee, t.ts, t.tx_hash, t.log_index
     from trades t join markets m on m.id = t.market_id
     where t.account = $1 or t.recipient = $1
     union all
     select case when x.to_addr = $1 then 'transfer_in' else 'transfer_out' end::text,
       coalesce(m.symbol, 'CRAB'), null::text, x.amount::text,
       (select price::text from ticks where ticks.market_id = x.market_id and ticks.block <= x.block order by ticks.block desc, ticks.ts desc limit 1),
-      x.ts, x.tx_hash, x.log_index
+      null::text, x.ts, x.tx_hash, x.log_index
     from transfers x left join markets m on m.id = x.market_id
     where x.from_addr = $1 or x.to_addr = $1
     union all
     select case when lower(v.kind) = 'deposit' then 'deposit' else 'withdraw' end::text,
       'CRAB', v.assets::text, v.shares::text,
       case when v.shares > 0 then (v.assets / v.shares)::text else null end,
-      v.ts, v.tx_hash, v.log_index
+      null::text, v.ts, v.tx_hash, v.log_index
     from vault_events v where v.account = $1
   )
   select activity.* from activity
@@ -76,14 +82,19 @@ export async function exportActivityRows(
   return { rows: truncated ? rows.slice(0, EXPORT_ROW_LIMIT) : rows, truncated };
 }
 
-/** CSV rows for activity inside the inclusive UTC date range `from`..`to` (YYYY-MM-DD). */
-export function buildExportRows(rows: ExportActivityRow[], from: string | undefined, to: string | undefined): string[][] {
+/**
+ * CSV rows for activity inside the inclusive UTC date range `from`..`to` (YYYY-MM-DD).
+ * Sells matched to a ledger fill carry its average-cost basis and realized P&L.
+ */
+export function buildExportRows(rows: ExportActivityRow[], fills: RealizedFill[], from: string | undefined, to: string | undefined): string[][] {
   const fromMs = from ? Date.parse(`${from}T00:00:00.000Z`) : -Infinity;
   const toMs = to ? Date.parse(`${to}T23:59:59.999Z`) : Infinity;
+  const fillByKey = new Map(fills.map((fill) => [`${fill.txHash}:${fill.logIndex}`, fill]));
   const output: string[][] = [];
   for (const row of rows) {
     const ts = dateValue(row.ts);
     if (!ts || ts.getTime() < fromMs || ts.getTime() > toMs) continue;
+    const fill = row.kind === "sell" ? fillByKey.get(`${row.tx_hash}:${row.log_index}`) : undefined;
     output.push([
       ts.toISOString(),
       KIND_LABELS[row.kind] ?? row.kind,
@@ -91,6 +102,9 @@ export function buildExportRows(rows: ExportActivityRow[], from: string | undefi
       row.tokens ?? "",
       row.price ?? "",
       row.usdg ?? "",
+      row.fee ?? "",
+      fill ? decimal(fill.costRemoved) : "",
+      fill ? decimal(fill.realized) : "",
       row.tx_hash,
       `${EXPLORER_URL}/tx/${row.tx_hash}`,
     ]);
@@ -116,6 +130,11 @@ export async function accountExport(
   from: string | undefined,
   to: string | undefined,
 ): Promise<{ csv: string; historyComplete: boolean; truncated: boolean }> {
-  const { rows, truncated } = await exportActivityRows(deps, address, type);
-  return { csv: toCsv(EXPORT_HEADER, buildExportRows(rows, from, to)), historyComplete: true, truncated };
+  const [{ rows, truncated }, ledger] = await Promise.all([
+    exportActivityRows(deps, address, type),
+    powerLedgerEvents(deps, address),
+  ]);
+  // Always replay the full ledger: realized P&L on a sell depends on earlier buys.
+  const { fills } = replayPowerLedger(ledger.events, address);
+  return { csv: toCsv(EXPORT_HEADER, buildExportRows(rows, fills, from, to)), historyComplete: ledger.historyComplete, truncated };
 }
