@@ -4,6 +4,7 @@ import type { ApiDependencies, DbRow } from "../../api/types";
 import { asRows, dateValue, jsonRecord, numberValue, textValue } from "../../api/types";
 import { marketSession, type MarketSession } from "./sessions";
 import { regimeName } from "./shared";
+import { marketMeta, type MarketMeta } from "../../config/market-meta";
 
 interface MarketRawRow extends DbRow {
   id: number | string;
@@ -45,6 +46,7 @@ interface CorpActionRow extends DbRow {
 export interface MarketView {
   id: number;
   symbol: string;
+  meta?: MarketMeta | undefined;
   token: string;
   regime: "open" | "off_hours" | "paused";
   session: MarketSession;
@@ -217,6 +219,7 @@ export async function listMarkets(deps: ApiDependencies, requestedNow?: Date): P
     const view: MarketView = {
       id: marketId,
       symbol: row.symbol,
+      meta: marketMeta(row.symbol),
       token: row.token.toLowerCase(),
       regime,
       session,
