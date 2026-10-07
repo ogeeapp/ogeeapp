@@ -56,7 +56,10 @@ export const marketDetailResponseSchema = marketSchema.extend({
   stats: z.object({ trades24h: z.number().int().nonnegative(), holders: z.number().int().nonnegative() }),
 });
 
-export const candleSchema = z.array(z.object({ t: z.number().int(), o: decimal, h: decimal, l: decimal, c: decimal }));
+export const candleSchema = z.array(z.object({
+  t: z.number().int(), o: decimal, h: decimal, l: decimal, c: decimal,
+  v: decimal, vb: decimal, vs: decimal, n: z.number().int().nonnegative(),
+}));
 export const carrySchema = z.array(z.object({ t: z.number().int(), dailyCarryPct: percent, regime: z.enum(["open", "off_hours", "paused"]) }));
 
 export const tradeListSchema = z.array(z.object({

@@ -303,7 +303,7 @@ export async function marketCandles(
   range: "1H" | "4H" | "1D" | "1W" | "1M" | "ALL",
   series: "price" | "index",
   requestedNow?: Date,
-): Promise<Array<{ t: number; o: string; h: string; l: string; c: string }> | null> {
+): Promise<Array<{ t: number; o: string; h: string; l: string; c: string; v: string; vb: string; vs: string; n: number }> | null> {
   const now = requestedNow ?? await apiNow(deps);
   const marketResult = await deps.sql`select id from markets where upper(symbol) = ${symbol.toUpperCase()} limit 1`;
   const market = asRows<DbRow>(marketResult)[0];
@@ -375,7 +375,28 @@ export async function marketCandles(
       filled.push({ t, o: last, h: last, l: last, c: last });
     }
   }
-  return filled;
+  const volumeBound = plan.lookback
+    ? `and ts >= $2::timestamptz - interval '${plan.lookback}' - interval '${plan.interval}'`
+    : "";
+  const volumeResult = await deps.sql.unsafe(
+    `select floor(extract(epoch from time_bucket(interval '${plan.interval}', ts)))::bigint as t,
+       sum(usdg)::text as v,
+       sum(case when side = 'buy' then usdg else 0 end)::text as vb,
+       sum(case when side = 'sell' then usdg else 0 end)::text as vs,
+       count(*)::int as n
+     from trades where market_id = $1 and ts <= $2::timestamptz ${volumeBound}
+     group by 1`,
+    [marketId, now.toISOString()],
+  );
+  return mergeVolume(filled, asRows<DbRow>(volumeResult));
+}
+
+export function mergeVolume<T extends { t: number }>(candles: T[], rows: DbRow[]) {
+  const byT = new Map(rows.map((row) => [numberValue(row.t), row]));
+  return candles.map((candle) => {
+    const row = byT.get(candle.t);
+    return { ...candle, v: textValue(row?.v, "0"), vb: textValue(row?.vb, "0"), vs: textValue(row?.vs, "0"), n: numberValue(row?.n) };
+  });
 }
 
 export async function marketCarry(
