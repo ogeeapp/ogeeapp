@@ -97,6 +97,16 @@ export const corpActionsSchema = z.array(z.object({ id: z.string(), symbol: z.st
 export const statsResponseSchema = z.object({ openInterestUsd: decimal, volume24hUsd: decimal, trades24h: z.number().int().nonnegative(), tvlUsd: decimal,
   markets: z.array(z.object({ symbol: z.string(), price: decimal, dailyCarryPct: percent, regime: z.enum(["open", "off_hours", "paused"]) })) });
 
+const count = z.number().int().nonnegative();
+export const historyRangeQuery = z.object({ range: z.enum(["7D", "30D", "90D", "ALL"]).default("30D") });
+export const statsHistoryResponseSchema = z.object({
+  range: z.enum(["7D", "30D", "90D", "ALL"]), from: isoDateTime, to: isoDateTime,
+  summary: z.object({ volumeUsd: decimal, buyVolumeUsd: decimal, sellVolumeUsd: decimal, feesUsd: decimal, trades: count, uniqueTraders: count }),
+  points: z.array(z.object({ t: z.number().int(), volumeUsd: decimal, buyVolumeUsd: decimal, sellVolumeUsd: decimal, feesUsd: decimal,
+    trades: count, uniqueTraders: count, tvlUsd: decimal.nullable() })),
+  markets: z.array(z.object({ symbol: z.string(), volumeUsd: decimal, trades: count, sharePct: percent })),
+});
+
 export const symbolParams = z.object({ symbol: z.string().min(1).max(16).transform((value) => value.toUpperCase()) });
 export const addressParams = z.object({ address: z.string().refine((value) => isAddress(value, { strict: false }), "Invalid EVM address").transform((value) => value.toLowerCase()) });
 export const rangeQuery = z.object({ range: z.enum(["1H", "4H", "1D", "1W", "1M", "ALL"]).default("1D"), series: z.enum(["price", "index"]).default("price") });
