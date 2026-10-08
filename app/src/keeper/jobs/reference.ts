@@ -1,5 +1,6 @@
 import { fetchJsonWithTimeout } from "../http";
 import type { KeeperContext } from "../context";
+import { fixed } from "../../lib/fixed";
 
 export interface RefQuote {
   stock: string;
@@ -17,6 +18,39 @@ export interface RefQuote {
 }
 
 type ObjectValue = Record<string, unknown>;
+
+const ET_DATE_FORMATTER = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit",
+});
+const ET_TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+});
+
+export function flowDate(generatedAt: Date): string {
+  return ET_DATE_FORMATTER.format(generatedAt);
+}
+
+function minutesAfterEtMidnight(value: Date): number {
+  const parts = ET_TIME_FORMATTER.formatToParts(value);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
+  return hour * 60 + minute;
+}
+
+export function nextFlowValue(
+  previous: { value: string; firstSeenAt: Date } | null,
+  incoming: string,
+  now: Date,
+): string {
+  if (previous === null) return incoming;
+
+  const previousValue = fixed(previous.value);
+  const incomingValue = fixed(incoming);
+  const earlyDay = flowDate(previous.firstSeenAt) === flowDate(now)
+    && minutesAfterEtMidnight(previous.firstSeenAt) < 6 * 60;
+  if (incomingValue * 2n < previousValue && earlyDay) return incoming;
+  return incomingValue > previousValue ? incoming : previous.value;
+}
 
 function object(value: unknown): ObjectValue {
   return value && typeof value === "object" && !Array.isArray(value) ? value as ObjectValue : {};
@@ -97,9 +131,46 @@ export async function updateReferencePrices(context: KeeperContext): Promise<Rec
       daily_low=excluded.daily_low, daily_volume=excluded.daily_volume, mint_burn_usd=excluded.mint_burn_usd,
       halt=excluded.halt, generated_at=excluded.generated_at, fetched_at=now()`;
 
+  const flowQuotes = quotes.filter((quote) => quote.mintBurnUsd !== null);
+  if (flowQuotes.length > 0) {
+    const stocks = flowQuotes.map((quote) => quote.stock);
+    const dates = flowQuotes.map((quote) => flowDate(quote.generatedAt));
+    const priorRows = await context.sql<{
+      stock: string;
+      flow_date: string;
+      mint_burn_usd: string;
+      first_seen_at: Date;
+    }[]>`select stock, flow_date::text as flow_date, mint_burn_usd::text as mint_burn_usd, first_seen_at
+      from token_flow
+      where (stock, flow_date) in (select * from unnest(${stocks}::text[], ${dates}::date[]))`;
+    const priorByKey = new Map(priorRows.map((row) => [`${row.stock}:${row.flow_date}`, row]));
+    const updatedAt = new Date().toISOString();
+    const flowRows = flowQuotes.map((quote) => {
+      const date = flowDate(quote.generatedAt);
+      const previous = priorByKey.get(`${quote.stock}:${date}`);
+      return {
+        stock: quote.stock,
+        flow_date: date,
+        symbol: quote.symbol,
+        mint_burn_usd: nextFlowValue(
+          previous ? { value: previous.mint_burn_usd, firstSeenAt: previous.first_seen_at } : null,
+          quote.mintBurnUsd!,
+          quote.generatedAt,
+        ),
+        first_seen_at: quote.generatedAt.toISOString(),
+        updated_at: updatedAt,
+      };
+    });
+    const flowColumns = ["stock", "flow_date", "symbol", "mint_burn_usd", "first_seen_at", "updated_at"] as const;
+    await context.sql`insert into token_flow ${context.sql(flowRows, ...flowColumns)}
+      on conflict (stock, flow_date) do update set mint_burn_usd=excluded.mint_burn_usd,
+        symbol=excluded.symbol, updated_at=excluded.updated_at`;
+  }
+  await context.sql`delete from token_flow where flow_date < current_date - 120`;
+
   const newestQuoteAt = quotes.reduce(
     (newest, quote) => Math.max(newest, quote.generatedAt.getTime()),
     0,
   );
-  return { stored: quotes.length, newestQuoteAt: new Date(newestQuoteAt).toISOString() };
+  return { stored: quotes.length, newestQuoteAt: new Date(newestQuoteAt).toISOString(), flowRows: flowQuotes.length };
 }

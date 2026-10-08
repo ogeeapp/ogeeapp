@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { KeeperContext } from "../context";
 import { fetchJsonWithTimeout } from "../http";
-import { normalizeQuotes, updateReferencePrices } from "./reference";
+import { flowDate, nextFlowValue, normalizeQuotes, updateReferencePrices } from "./reference";
 
 const fixture = {
   quotes: [
@@ -91,7 +91,23 @@ async function withFetch<T>(fetcher: FetchImplementation, run: () => Promise<T>)
   }
 }
 
-test("updateReferencePrices performs one bulk upsert and records the newest quote time", async () => {
+test("flowDate uses the New York calendar day across summer and winter boundaries", () => {
+  expect(flowDate(new Date("2026-10-08T03:59:59Z"))).toBe("2026-10-07");
+  expect(flowDate(new Date("2026-10-08T04:00:00Z"))).toBe("2026-10-08");
+  expect(flowDate(new Date("2026-01-08T04:59:59Z"))).toBe("2026-01-07");
+  expect(flowDate(new Date("2026-01-08T05:00:00Z"))).toBe("2026-01-08");
+});
+
+test("nextFlowValue keeps the maximum except for an early-day reset", () => {
+  const now = new Date("2026-10-08T13:00:00Z");
+  expect(nextFlowValue(null, "7.25", now)).toBe("7.25");
+  expect(nextFlowValue({ value: "100", firstSeenAt: new Date("2026-10-08T05:00:00Z") }, "110", now)).toBe("110");
+  expect(nextFlowValue({ value: "100", firstSeenAt: new Date("2026-10-08T05:00:00Z") }, "90", now)).toBe("100");
+  expect(nextFlowValue({ value: "100", firstSeenAt: new Date("2026-10-08T05:00:00Z") }, "49.99", now)).toBe("49.99");
+  expect(nextFlowValue({ value: "100", firstSeenAt: new Date("2026-10-08T14:00:00Z") }, "49", now)).toBe("100");
+});
+
+test("updateReferencePrices records the daily flow in one select and one bulk upsert", async () => {
   const calls: { url: string; init: RequestInit | undefined }[] = [];
   const { context, statements, inserts } = fakeContext();
   const result = await withFetch(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -103,14 +119,35 @@ test("updateReferencePrices performs one bulk upsert and records the newest quot
   expect(calls[0]?.url).toBe("https://api.robinhood.com/rhj/prices/");
   expect((calls[0]?.init?.headers as Record<string, string>)?.["User-Agent"]).toBe("ogee-keeper/1.0 (+https://ogeeapp.xyz)");
   expect((calls[0]?.init?.headers as Record<string, string>)?.Accept).toBe("application/json");
-  expect(statements).toHaveLength(1);
-  expect(statements[0]?.query).toContain("insert into ref_prices");
-  expect(statements[0]?.query).toContain("on conflict (stock) do update set");
-  expect(statements[0]?.query).toContain("fetched_at=now()");
-  expect(inserts).toHaveLength(1);
+  const refUpsert = statements.find((statement) => statement.query.includes("insert into ref_prices"));
+  const flowSelects = statements.filter((statement) => statement.query.trimStart().startsWith("select stock, flow_date"));
+  const retention = statements.find((statement) => statement.query.includes("delete from token_flow"));
+  expect(refUpsert?.query).toContain("on conflict (stock) do update set");
+  expect(refUpsert?.query).toContain("fetched_at=now()");
+  expect(flowSelects).toHaveLength(1);
+  expect(flowSelects[0]?.query).toContain("unnest(?::text[], ?::date[])");
+  expect(retention?.query).toContain("flow_date < current_date - 120");
+  expect(inserts).toHaveLength(2);
   expect(inserts[0]?.rows).toHaveLength(4);
   expect(inserts[0]?.rows[0]).toHaveProperty("token_bid");
-  expect(result).toEqual({ stored: 4, newestQuoteAt: "2026-10-08T10:51:42.000Z" });
+  expect(inserts[1]?.columns).toEqual(["stock", "flow_date", "symbol", "mint_burn_usd", "first_seen_at", "updated_at"]);
+  expect(inserts[1]?.rows).toHaveLength(3);
+  expect(inserts[1]?.rows[0]).toMatchObject({ flow_date: "2026-10-08" });
+  expect(result).toEqual({ stored: 4, newestQuoteAt: "2026-10-08T10:51:42.000Z", flowRows: 3 });
+});
+
+test("updateReferencePrices skips quotes without a string mintBurnUsdVolume", async () => {
+  const { context, inserts } = fakeContext();
+  const payload = { quotes: [
+    fixture.quotes[0],
+    { ...fixture.quotes[1], mintBurnUsdVolume: 5976 },
+  ] };
+  const result = await withFetch(async () => Response.json(payload), () => updateReferencePrices(context));
+
+  expect(inserts).toHaveLength(2);
+  expect(inserts[0]?.rows).toHaveLength(2);
+  expect(inserts[1]?.rows).toHaveLength(1);
+  expect(result).toMatchObject({ stored: 2, flowRows: 1 });
 });
 
 test("updateReferencePrices rejects empty data and hides URL queries on HTTP errors", async () => {
