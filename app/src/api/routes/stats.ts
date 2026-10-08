@@ -1,8 +1,10 @@
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import type { ApiDependencies } from "../types";
-import { historyRangeQuery, statsHistoryResponseSchema, statsResponseSchema } from "../schemas";
+import { historyRangeQuery, statsHistoryResponseSchema, statsResponseSchema, volBoardResponseSchema } from "../schemas";
 import { aggregateStats } from "../../db/queries/stats";
 import { protocolHistory } from "../../db/queries/analytics";
+import { apiNow } from "../clock";
+import { allMarketVols, sortVolBoard } from "../../db/queries/vol";
 
 const route = createRoute({
   method: "get", path: "/v1/stats", tags: ["markets"],
@@ -14,7 +16,20 @@ const historyRoute = createRoute({
   responses: { 200: { description: "Daily protocol history", content: { "application/json": { schema: statsHistoryResponseSchema } } } },
 });
 
+const volRoute = createRoute({
+  method: "get", path: "/v1/stats/vol", tags: ["markets"],
+  responses: { 200: { description: "Markets ranked by carry relative to realized variance", content: { "application/json": { schema: volBoardResponseSchema } } } },
+});
+
 export function registerStatsRoutes(app: OpenAPIHono, deps: ApiDependencies): void {
+  app.openapi(volRoute, async (context) => {
+    context.header("Cache-Control", "public, max-age=300, stale-while-revalidate=600");
+    const now = await apiNow(deps);
+    const all = await deps.cache.getOrLoad("vol:all", 600_000, () => allMarketVols(deps, now));
+    const markets = sortVolBoard(all).map(({ history: _history, ...market }) => market);
+    return context.json({ asOf: now.toISOString(), markets }, 200);
+  });
+
   app.openapi(route, async (context) => {
     context.header("Cache-Control", "public, max-age=5, stale-while-revalidate=30");
     const stats = await deps.cache.getOrLoad("stats:all", 3_000, () => aggregateStats(deps));

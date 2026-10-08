@@ -3,11 +3,14 @@ import { z } from "@hono/zod-openapi";
 import type { ApiDependencies } from "../types";
 import {
   candleSchema, carrySchema, errorResponseSchema, limitQuery, marketDetailResponseSchema,
-  marketHoldersResponseSchema, marketListResponseSchema, regimeListSchema, rangeQuery, symbolParams, tradeListSchema,
+  marketHoldersResponseSchema, marketVolSchema, marketListResponseSchema, regimeListSchema, rangeQuery, symbolParams, tradeListSchema,
 } from "../schemas";
 import { marketCandles, marketCarry, getMarketDetail, listMarkets, marketRegimes, marketTrades } from "../../db/queries/markets";
 import { marketHolders } from "../../db/queries/holders";
 import { dateValue, textValue } from "../types";
+
+import { apiNow } from "../clock";
+import { allMarketVols } from "../../db/queries/vol";
 
 const cacheHeader = "public, max-age=5, stale-while-revalidate=30";
 
@@ -59,11 +62,29 @@ const holdersRoute = createRoute({
   },
 });
 
+const volRoute = createRoute({
+  method: "get", path: "/v1/markets/{symbol}/vol", tags: ["markets"], request: { params: symbolParams },
+  responses: {
+    200: { description: "Realized and carry-implied market volatility", content: { "application/json": { schema: marketVolSchema } } },
+    404: { description: "Unknown market symbol", content: { "application/json": { schema: errorResponseSchema } } },
+  },
+});
+
 function publicResponse(context: { header: (name: string, value: string) => void }): void {
   context.header("Cache-Control", cacheHeader);
 }
 
 export function registerMarketRoutes(app: OpenAPIHono, deps: ApiDependencies): void {
+  app.openapi(volRoute, async (context) => {
+    context.header("Cache-Control", "public, max-age=300, stale-while-revalidate=600");
+    const { symbol } = context.req.valid("param");
+    const now = await apiNow(deps);
+    const all = await deps.cache.getOrLoad("vol:all", 600_000, () => allMarketVols(deps, now));
+    const vol = all.find((market) => market.symbol.toUpperCase() === symbol.toUpperCase());
+    if (!vol) return context.json({ error: "NOT_FOUND", message: `Unknown market symbol: ${symbol}` }, 404);
+    return context.json({ ...vol, asOf: now.toISOString() }, 200);
+  });
+
   app.openapi(listRoute, async (context) => {
     publicResponse(context);
     const markets = await deps.cache.getOrLoad("markets:list", 3_000, () => listMarkets(deps));

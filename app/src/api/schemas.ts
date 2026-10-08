@@ -160,3 +160,16 @@ export const exportQuery = z.object({
   to: isoDate.optional(),
 }).refine((q) => !q.from || !q.to || q.from <= q.to, "from must not be after to");
 export const corpActionsQuery = z.object({ symbol: z.string().min(1).max(16).transform((value) => value.toUpperCase()).optional() });
+
+const nullablePct = percent.nullable();
+export const marketVolSchema = z.object({
+  symbol: z.string(), asOf: isoDateTime,
+  realized7dPct: nullablePct, realized30dPct: nullablePct, carryImpliedPct: nullablePct,
+  annualCarryPct: nullablePct, carryToVariance: z.number().nullable(),
+  samples7d: z.number().int().nonnegative(), samples30d: z.number().int().nonnegative(),
+  history: z.array(z.object({ t: z.number().int(), realized7dPct: z.number() })),
+});
+export const volBoardResponseSchema = z.object({
+  asOf: isoDateTime,
+  markets: z.array(marketVolSchema.omit({ asOf: true, history: true })),
+});
