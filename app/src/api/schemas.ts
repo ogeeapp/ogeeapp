@@ -2,7 +2,7 @@ import { z } from "@hono/zod-openapi";
 import { isAddress } from "viem";
 
 const decimal = z.string().regex(/^-?\d+(?:\.\d+)?$/);
-const isoDateTime = z.string().datetime({ offset: true });
+export const isoDateTime = z.string().datetime({ offset: true });
 const percent = z.number().finite();
 
 export const errorResponseSchema = z.object({ error: z.string(), message: z.string() });
@@ -156,6 +156,25 @@ export const accountStatsResponseSchema = z.object({
 
 export const symbolParams = z.object({ symbol: z.string().min(1).max(16).transform((value) => value.toUpperCase()) });
 export const addressParams = z.object({ address: z.string().refine((value) => isAddress(value, { strict: false }), "Invalid EVM address").transform((value) => value.toLowerCase()) });
+export const upcomingQuery = z.object({
+  address: z.string().refine((value) => isAddress(value, { strict: false }), "Invalid EVM address")
+    .transform((value) => value.toLowerCase()).optional(),
+});
+export const signedBodySchema = z.object({
+  address: z.string().refine((value) => isAddress(value, { strict: false }), "Invalid EVM address").transform((value) => value.toLowerCase()),
+  nonce: z.string().regex(/^[A-Za-z0-9]{16,64}$/),
+  issued: isoDateTime,
+  expires: isoDateTime,
+  signature: z.string().regex(/^0x[0-9a-fA-F]{130}$/),
+});
+export const upcomingItemSchema = z.object({
+  id: z.string(), symbol: z.string(), underlying: z.string(),
+  curve: z.enum(["squared", "ratio", "cubed", "root", "downside"]),
+  name: z.string(), description: z.string(), tags: z.array(z.string()),
+  status: z.enum(["soon", "live"]), interest: z.number().int().nonnegative(), subscribed: z.boolean().nullable(),
+});
+export const upcomingResponseSchema = z.object({ items: z.array(upcomingItemSchema), asOf: isoDateTime });
+export const subscribeResponseSchema = z.object({ id: z.string(), interest: z.number().int().nonnegative(), subscribed: z.boolean() });
 export const rangeQuery = z.object({ range: z.enum(["1H", "4H", "1D", "1W", "1M", "ALL"]).default("1D"), series: z.enum(["price", "index"]).default("price") });
 export const carryRangeQuery = z.object({ range: z.enum(["1W", "1M", "ALL"]).default("1W") });
 export const limitQuery = z.object({ limit: z.coerce.number().int().min(1).max(200).default(50) });

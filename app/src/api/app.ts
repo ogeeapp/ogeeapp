@@ -10,6 +10,7 @@ import { registerHealthRoutes } from "./routes/health";
 import { registerLeaderboardRoutes } from "./routes/leaderboard";
 import { registerMarketRoutes } from "./routes/markets";
 import { registerStatsRoutes } from "./routes/stats";
+import { registerUpcomingRoutes } from "./routes/upcoming";
 import { registerVaultRoutes } from "./routes/vault";
 import { safeErrorSummary } from "../log";
 import { rateLimit } from "./rate-limit";
@@ -47,6 +48,10 @@ export function createApiApp(deps: ApiDependencies) {
     windowMs: 60_000,
     clientIpHeader: deps.config.API_CLIENT_IP_HEADER,
   }));
+  app.use("/v1/upcoming/*", async (context, next) => {
+    if (context.req.method === "POST" || context.req.method === "DELETE") context.header("Cache-Control", "no-store");
+    await next();
+  });
   app.use("/v1/upcoming/*", bodyLimit({ maxSize: 4 * 1024 }));
   const writeLimiter = rateLimit({
     limit: deps.config.API_RATE_LIMIT_PER_MINUTE === 0 ? 0 : 20,
@@ -61,6 +66,7 @@ export function createApiApp(deps: ApiDependencies) {
   registerAccountRoutes(app, deps);
   registerVaultRoutes(app, deps);
   registerCorporateActionRoutes(app, deps);
+  registerUpcomingRoutes(app, deps);
   registerStatsRoutes(app, deps);
   registerLeaderboardRoutes(app, deps);
 
