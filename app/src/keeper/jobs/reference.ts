@@ -135,6 +135,8 @@ export async function updateReferencePrices(context: KeeperContext): Promise<Rec
   if (flowQuotes.length > 0) {
     const stocks = flowQuotes.map((quote) => quote.stock);
     const dates = flowQuotes.map((quote) => flowDate(quote.generatedAt));
+    const stockArray = context.sql.array(stocks, 25);
+    const dateArray = context.sql.array(dates, 1082);
     const priorRows = await context.sql<{
       stock: string;
       flow_date: string;
@@ -142,7 +144,7 @@ export async function updateReferencePrices(context: KeeperContext): Promise<Rec
       first_seen_at: Date;
     }[]>`select stock, flow_date::text as flow_date, mint_burn_usd::text as mint_burn_usd, first_seen_at
       from token_flow
-      where (stock, flow_date) in (select * from unnest(${stocks}::text[], ${dates}::date[]))`;
+      where (stock, flow_date) in (select * from unnest(${stockArray}::text[], ${dateArray}::date[]))`;
     const priorByKey = new Map(priorRows.map((row) => [`${row.stock}:${row.flow_date}`, row]));
     const updatedAt = new Date().toISOString();
     const flowRows = flowQuotes.map((quote) => {

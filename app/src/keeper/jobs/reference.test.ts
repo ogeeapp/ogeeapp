@@ -63,7 +63,8 @@ test("normalizeQuotes keeps valid Robinhood quotes, exact strings, and the newes
 function fakeContext() {
   const statements: { query: string; values: unknown[] }[] = [];
   const inserts: { rows: Record<string, unknown>[]; columns: string[] }[] = [];
-  const sql = (...args: unknown[]) => {
+  const arrays: { values: unknown[]; type: number | undefined }[] = [];
+  const sql = Object.assign((...args: unknown[]) => {
     const first = args[0];
     if (Array.isArray(first) && "raw" in first) {
       statements.push({ query: (first as TemplateStringsArray).join("?"), values: args.slice(1) });
@@ -71,11 +72,17 @@ function fakeContext() {
     }
     inserts.push({ rows: first as Record<string, unknown>[], columns: args.slice(1) as string[] });
     return "<quote-rows>";
-  };
+  }, {
+    array: (values: unknown[], type?: number) => {
+      arrays.push({ values, type });
+      return values;
+    },
+  });
   return {
     context: { sql, logger: { warn() {} } } as unknown as KeeperContext,
     statements,
     inserts,
+    arrays,
   };
 }
 
@@ -109,7 +116,7 @@ test("nextFlowValue keeps the maximum except for an early-day reset", () => {
 
 test("updateReferencePrices records the daily flow in one select and one bulk upsert", async () => {
   const calls: { url: string; init: RequestInit | undefined }[] = [];
-  const { context, statements, inserts } = fakeContext();
+  const { context, statements, inserts, arrays } = fakeContext();
   const result = await withFetch(async (input: RequestInfo | URL, init?: RequestInit) => {
     calls.push({ url: String(input), init });
     return Response.json(fixture);
@@ -126,6 +133,9 @@ test("updateReferencePrices records the daily flow in one select and one bulk up
   expect(refUpsert?.query).toContain("fetched_at=now()");
   expect(flowSelects).toHaveLength(1);
   expect(flowSelects[0]?.query).toContain("unnest(?::text[], ?::date[])");
+  expect(arrays.map(({ type }) => type)).toEqual([25, 1082]);
+  expect(arrays[0]?.values).toHaveLength(3);
+  expect(arrays[1]?.values).toEqual(["2026-10-08", "2026-10-08", "2026-10-08"]);
   expect(retention?.query).toContain("flow_date < current_date - 120");
   expect(inserts).toHaveLength(2);
   expect(inserts[0]?.rows).toHaveLength(4);
