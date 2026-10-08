@@ -60,15 +60,16 @@ test("normalizeQuotes keeps valid Robinhood quotes, exact strings, and the newes
   expect(quotes.find((quote) => quote.symbol === "CIEN")?.tokenAsk).toBe("435.000000000000000000");
 });
 
-function fakeContext() {
+function fakeContext(selectRows: unknown[] = []) {
   const statements: { query: string; values: unknown[] }[] = [];
   const inserts: { rows: Record<string, unknown>[]; columns: string[] }[] = [];
   const arrays: { values: unknown[]; type: number | undefined }[] = [];
   const sql = Object.assign((...args: unknown[]) => {
     const first = args[0];
     if (Array.isArray(first) && "raw" in first) {
-      statements.push({ query: (first as TemplateStringsArray).join("?"), values: args.slice(1) });
-      return Promise.resolve([]);
+      const query = (first as TemplateStringsArray).join("?");
+      statements.push({ query, values: args.slice(1) });
+      return Promise.resolve(query.trimStart().startsWith("select stock, flow_date") ? selectRows : []);
     }
     inserts.push({ rows: first as Record<string, unknown>[], columns: args.slice(1) as string[] });
     return "<quote-rows>";
@@ -132,8 +133,8 @@ test("updateReferencePrices records the daily flow in one select and one bulk up
   expect(refUpsert?.query).toContain("on conflict (stock) do update set");
   expect(refUpsert?.query).toContain("fetched_at=now()");
   expect(flowSelects).toHaveLength(1);
-  expect(flowSelects[0]?.query).toContain("unnest(?::text[], ?::date[])");
-  expect(arrays.map(({ type }) => type)).toEqual([25, 1082]);
+  expect(flowSelects[0]?.query).toContain("unnest(?::text[], ?::text[]::date[])");
+  expect(arrays.map(({ type }) => type)).toEqual([25, 25]);
   expect(arrays[0]?.values).toHaveLength(3);
   expect(arrays[1]?.values).toEqual(["2026-10-08", "2026-10-08", "2026-10-08"]);
   expect(retention?.query).toContain("flow_date < current_date - 120");
@@ -144,6 +145,21 @@ test("updateReferencePrices records the daily flow in one select and one bulk up
   expect(inserts[1]?.rows).toHaveLength(3);
   expect(inserts[1]?.rows[0]).toMatchObject({ flow_date: "2026-10-08" });
   expect(result).toEqual({ stored: 4, newestQuoteAt: "2026-10-08T10:51:42.000Z", flowRows: 3 });
+});
+
+test("updateReferencePrices handles a prior flow row with the driver's timestamp string", async () => {
+  const { context, inserts } = fakeContext([{
+    stock: "0xd95b44124e475743a7589e68f3d74008a5536d44",
+    flow_date: "2026-10-08",
+    mint_burn_usd: "200",
+    first_seen_at: "2026-10-08 05:00:00+00",
+  }]);
+  await withFetch(async () => Response.json(fixture), () => updateReferencePrices(context));
+
+  expect(inserts[1]?.rows[0]).toMatchObject({
+    stock: "0xd95b44124e475743a7589e68f3d74008a5536d44",
+    mint_burn_usd: "50.6545813488",
+  });
 });
 
 test("updateReferencePrices skips quotes without a string mintBurnUsdVolume", async () => {

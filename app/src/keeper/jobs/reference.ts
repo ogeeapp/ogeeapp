@@ -136,15 +136,16 @@ export async function updateReferencePrices(context: KeeperContext): Promise<Rec
     const stocks = flowQuotes.map((quote) => quote.stock);
     const dates = flowQuotes.map((quote) => flowDate(quote.generatedAt));
     const stockArray = context.sql.array(stocks, 25);
-    const dateArray = context.sql.array(dates, 1082);
+    // Drizzle overrides date-array handlers; encode text and let Postgres cast the elements.
+    const dateArray = context.sql.array(dates, 25);
     const priorRows = await context.sql<{
       stock: string;
       flow_date: string;
       mint_burn_usd: string;
-      first_seen_at: Date;
+      first_seen_at: Date | string;
     }[]>`select stock, flow_date::text as flow_date, mint_burn_usd::text as mint_burn_usd, first_seen_at
       from token_flow
-      where (stock, flow_date) in (select * from unnest(${stockArray}::text[], ${dateArray}::date[]))`;
+      where (stock, flow_date) in (select * from unnest(${stockArray}::text[], ${dateArray}::text[]::date[]))`;
     const priorByKey = new Map(priorRows.map((row) => [`${row.stock}:${row.flow_date}`, row]));
     const updatedAt = new Date().toISOString();
     const flowRows = flowQuotes.map((quote) => {
@@ -155,7 +156,7 @@ export async function updateReferencePrices(context: KeeperContext): Promise<Rec
         flow_date: date,
         symbol: quote.symbol,
         mint_burn_usd: nextFlowValue(
-          previous ? { value: previous.mint_burn_usd, firstSeenAt: previous.first_seen_at } : null,
+          previous ? { value: previous.mint_burn_usd, firstSeenAt: new Date(previous.first_seen_at) } : null,
           quote.mintBurnUsd!,
           quote.generatedAt,
         ),
