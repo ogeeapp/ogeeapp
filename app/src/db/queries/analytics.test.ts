@@ -43,6 +43,20 @@ test("market shares are zero when there is no volume", () => {
   expect(shares.some((share) => Number.isNaN(share.sharePct))).toBe(false);
 });
 
+test("protocol history computes market shares against every indexed market", async () => {
+  const deps = depsFor((query) => {
+    if (query.includes("sum(t.usdg)::text")) return [
+      { symbol: "SPY", volume: "30", trades: 2 },
+      { symbol: "SPYROOT", volume: "20", trades: 1 },
+      { symbol: "SPCX", volume: "10", trades: 1 },
+    ];
+    return [];
+  });
+  const result = await protocolHistory(deps, "7D", new Date("2026-10-08T12:00:00Z"));
+  expect(result.markets.map((market) => market.symbol)).toEqual(["SPY", "SPYROOT", "SPCX"]);
+  expect(result.markets.map((market) => market.sharePct)).toEqual([50, 33.3333, 16.6667]);
+});
+
 function depsFor(rows: (query: string, values: unknown[]) => unknown[], calls: Array<{ query: string; values: unknown[] }> = []) {
   return {
     config: { NETWORK: "mainnet" },

@@ -15,13 +15,16 @@ import { apiNow } from "../clock";
 import { allMarketVols } from "../../db/queries/vol";
 
 const cacheHeader = "public, max-age=5, stale-while-revalidate=30";
+const marketListQuery = z.object({ include: z.enum(["upcoming"]).optional() });
 
 const listRoute = createRoute({
   method: "get", path: "/v1/markets", tags: ["markets"],
+  request: { query: marketListQuery },
   responses: { 200: { description: "Current market quotes and capacity", content: { "application/json": { schema: marketListResponseSchema } } } },
 });
 const detailRoute = createRoute({
-  method: "get", path: "/v1/markets/{symbol}", tags: ["markets"], request: { params: symbolParams },
+  method: "get", path: "/v1/markets/{symbol}", tags: ["markets"],
+  request: { params: symbolParams, query: marketListQuery },
   responses: {
     200: { description: "Market quote and configuration", content: { "application/json": { schema: marketDetailResponseSchema } } },
     404: { description: "Unknown market symbol", content: { "application/json": { schema: errorResponseSchema } } },
@@ -112,15 +115,20 @@ export function registerMarketRoutes(app: OpenAPIHono, deps: ApiDependencies): v
 
   app.openapi(listRoute, async (context) => {
     publicResponse(context);
+    const { include } = context.req.valid("query");
     const markets = await deps.cache.getOrLoad("markets:list", 3_000, () => listMarkets(deps));
-    return context.json(markets.map(({ config: _config, stats: _stats, ...market }) => market), 200);
+    const visible = include === "upcoming" ? markets : markets.filter((market) => market.launched);
+    return context.json(visible.map(({ config: _config, stats: _stats, ...market }) => market), 200);
   });
 
   app.openapi(detailRoute, async (context) => {
     publicResponse(context);
     const { symbol } = context.req.valid("param");
+    const { include } = context.req.valid("query");
     const market = await deps.cache.getOrLoad(`markets:detail:${symbol}`, 3_000, () => getMarketDetail(deps, symbol));
-    if (!market) return context.json({ error: "NOT_FOUND", message: `Unknown market symbol: ${symbol}` }, 404);
+    if (!market || (!market.launched && include !== "upcoming")) {
+      return context.json({ error: "NOT_FOUND", message: `Unknown market symbol: ${symbol}` }, 404);
+    }
     return context.json(market, 200);
   });
 

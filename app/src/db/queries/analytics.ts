@@ -144,6 +144,8 @@ export async function protocolHistory(deps: ApiDependencies, range: HistoryRange
       uniqueTraders: numberValue(summary?.traders),
     },
     points: buildDailySeries(startSec, nowSec, asRows<DbRow>(dailyResult), asRows<DbRow>(tvlResult), seed === null || seed === undefined ? null : textValue(seed)),
+    // Keep market shares based on total indexed volume; the public route applies
+    // current launch visibility after its long-lived history cache.
     markets: marketShares(asRows<DbRow>(marketResult)),
   };
 }

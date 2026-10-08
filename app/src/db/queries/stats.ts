@@ -35,7 +35,7 @@ export async function aggregateStats(deps: ApiDependencies) {
     volumeAllTimeUsd: textValue(totals?.volume_all, "0"),
     tradesAllTime: numberValue(totals?.trades_all),
     tradersAllTime: numberValue(totals?.traders_all),
-    markets: markets.map((market) => ({
+    markets: markets.filter((market) => market.launched).map((market) => ({
       symbol: market.symbol,
       price: market.price,
       dailyCarryPct: market.dailyCarryPct,

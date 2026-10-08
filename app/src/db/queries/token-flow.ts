@@ -2,6 +2,7 @@ import { apiNow } from "../../api/clock";
 import type { ApiDependencies, DbRow } from "../../api/types";
 import { asRows, dateValue, textValue } from "../../api/types";
 import { listMarkets } from "./markets";
+import { isLaunched } from "../../config/launch";
 
 interface TokenFlowDayRow extends DbRow {
   flow_date: string;
@@ -11,9 +12,9 @@ interface TokenFlowDayRow extends DbRow {
 
 interface HottestTokenRow extends DbRow {
   symbol: string;
+  stock: string;
   mint_burn_usd: string;
   fetched_at: Date | string;
-  listed: boolean;
 }
 
 export interface MarketTokenFlow {
@@ -99,14 +100,19 @@ export async function hottestTokens(
 ): Promise<HottestTokens> {
   const now = requestedNow ?? await apiNow(deps);
   const nowIso = now.toISOString();
-  const result = await deps.sql<HottestTokenRow[]>`
-    select r.symbol, r.stock, r.mint_burn_usd::text as mint_burn_usd, r.fetched_at,
-      (m.id is not null) as listed
-    from ref_prices r left join markets m on lower(m.stock) = r.stock
-    where r.fetched_at >= ${nowIso}::timestamptz - interval '10 minutes' and r.mint_burn_usd > 0
-    order by r.mint_burn_usd desc limit ${limit}
-  `;
-  const rows = asRows<HottestTokenRow>(result);
+  const [rows, launchResult] = await Promise.all([
+    deps.cache.getOrLoad(`stats:token-flow:data:${limit}`, 60_000, async () => asRows<HottestTokenRow>(await deps.sql<HottestTokenRow[]>`
+      select r.symbol, r.stock, r.mint_burn_usd::text as mint_burn_usd, r.fetched_at
+      from ref_prices r
+      where r.fetched_at >= ${nowIso}::timestamptz - interval '10 minutes' and r.mint_burn_usd > 0
+      order by r.mint_burn_usd desc limit ${limit}
+    `)),
+    deps.sql`select m.stock, m.symbol, ml.launched
+      from markets m left join market_launch ml on upper(ml.symbol) = upper(m.symbol)`,
+  ]);
+  const launchedMarkets = new Set(asRows<DbRow>(launchResult)
+    .filter((row) => isLaunched(textValue(row.symbol), typeof row.launched === "boolean" ? row.launched : undefined))
+    .map((row) => `${textValue(row.stock).toLowerCase()}:${textValue(row.symbol).toUpperCase()}`));
   const latestFetchedAt = rows.reduce<Date | null>((latest, row) => {
     const fetchedAt = dateValue(row.fetched_at);
     return fetchedAt && (!latest || fetchedAt > latest) ? fetchedAt : latest;
@@ -116,7 +122,7 @@ export async function hottestTokens(
     tokens: rows.map((row) => ({
       symbol: textValue(row.symbol),
       mintBurnUsd: textValue(row.mint_burn_usd, "0"),
-      listedOnOgee: row.listed === true,
+      listedOnOgee: launchedMarkets.has(`${textValue(row.stock).toLowerCase()}:${textValue(row.symbol).toUpperCase()}`),
     })),
   };
 }

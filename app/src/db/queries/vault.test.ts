@@ -42,3 +42,20 @@ test("vault thirty-day reference is the latest old-enough tick, distinct from in
   expect(result.change30dPct).toBe(10);
   expect(result.changeSinceInceptionPct).toBe(120);
 });
+
+test("vault hedge book omits unlaunched markets without changing its registry query", async () => {
+  const deps = {
+    config: { NETWORK: "mainnet" },
+    sql: async (strings: TemplateStringsArray) => {
+      const query = strings.join("?");
+      if (query.includes("from markets m")) return [
+        { symbol: "SPY", launched: false, liability: "5", hedge_units: "0", hedge_target: "0", spot: "10" },
+        { symbol: "SPYROOT", launched: null, liability: "0", hedge_units: "0", hedge_target: "0", spot: "10" },
+        { symbol: "SPCX", launched: true, liability: "2", hedge_units: "0", hedge_target: "0", spot: "10" },
+      ];
+      return [];
+    },
+  } as unknown as ApiDependencies;
+  const result = await vaultSnapshot(deps);
+  expect(result.markets.map((market) => market.symbol)).toEqual(["SPCX"]);
+});

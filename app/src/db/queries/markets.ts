@@ -6,6 +6,7 @@ import { marketSession, type MarketSession } from "./sessions";
 import { regimeName } from "./shared";
 import { marketMeta, type MarketMeta } from "../../config/market-meta";
 import { decodeKind, underlyingOf, type Curve } from "../../lib/market-kind";
+import { isLaunched } from "../../config/launch";
 
 interface MarketRawRow extends DbRow {
   id: number | string;
@@ -312,7 +313,7 @@ export async function listMarkets(deps: ApiDependencies, requestedNow?: Date): P
       exponent,
       alwaysOpen,
       underlying: underlyingOf(row.symbol, curve),
-      launched: launchBySymbol.get(row.symbol.toUpperCase()) ?? ["NVDA", "TSLA", "SPY", "AAPL", "PLTR", "AMD", "QQQ"].includes(row.symbol.toUpperCase()),
+      launched: isLaunched(row.symbol, launchBySymbol.get(row.symbol.toUpperCase())),
       meta: marketMeta(row.symbol),
       token: row.token.toLowerCase(),
       regime,

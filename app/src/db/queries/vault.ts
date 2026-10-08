@@ -2,14 +2,17 @@ import { fixed, decimal, multiply, ratioPercent, fromBps, roundedPercent } from 
 import { apiNow } from "../../api/clock";
 import type { ApiDependencies, DbRow } from "../../api/types";
 import { asRows, dateValue, numberValue, textValue } from "../../api/types";
+import { isLaunched } from "../../config/launch";
 
 export async function vaultSnapshot(deps: ApiDependencies) {
   const now = await apiNow(deps);
   const [vaultResult, marketResult, changeResult, change30dResult, inceptionResult] = await Promise.all([
     deps.sql`select * from vault_ticks order by ts desc limit 1`,
     deps.sql`
-      select m.symbol, t.liability::text, t.hedge_units::text, t.hedge_target::text, t.spot::text
-      from markets m left join lateral (select * from ticks where market_id = m.id order by ts desc limit 1) t on true
+      select m.symbol, ml.launched, t.liability::text, t.hedge_units::text, t.hedge_target::text, t.spot::text
+      from markets m
+      left join market_launch ml on upper(ml.symbol) = upper(m.symbol)
+      left join lateral (select * from ticks where market_id = m.id order by ts desc limit 1) t on true
       order by m.id
     `,
     deps.sql`
@@ -35,7 +38,8 @@ export async function vaultSnapshot(deps: ApiDependencies) {
     const reference = fixed(asRows<DbRow>(result)[0]?.nav_per_share as string | undefined);
     return reference > 0n ? ratioPercent(navPerShare - reference, reference) : null;
   };
-  const markets = asRows<DbRow>(marketResult).map((row) => {
+  const markets = asRows<DbRow>(marketResult).filter((row) =>
+    isLaunched(textValue(row.symbol), typeof row.launched === "boolean" ? row.launched : undefined)).map((row) => {
     const liability = fixed(row.liability as string | undefined);
     const hedgeUnits = fixed(row.hedge_units as string | undefined);
     const hedgeTarget = fixed(row.hedge_target as string | undefined);

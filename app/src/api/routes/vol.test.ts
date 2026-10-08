@@ -6,6 +6,7 @@ import type { ApiDependencies } from "../types";
 import type { MarketVol } from "../../db/queries/vol";
 
 const header = "public, max-age=300, stale-while-revalidate=600";
+const boardHeader = "public, max-age=5, stale-while-revalidate=30";
 
 async function fixture() {
   const cache = new TtlCache();
@@ -15,6 +16,7 @@ async function fixture() {
   ].map((row) => ({ realized7dPct: 40, realized30dPct: 50, carryImpliedPct: 50.55,
     annualCarryPct: 25.55, samples7d: 49, samples30d: 200, history: [{ t: 0, realized7dPct: 40 }], ...row }));
   await cache.getOrLoad("vol:all", 600_000, async () => markets);
+  await cache.getOrLoad("markets:list", 3_000, async () => markets.map(({ symbol }) => ({ symbol, launched: true })));
   const calls: { key: string; ttl: number }[] = [];
   const original = cache.getOrLoad.bind(cache);
   cache.getOrLoad = (key, ttl, load) => { calls.push({ key, ttl }); return original(key, ttl, load); };
@@ -44,10 +46,13 @@ test("market and board share a ten-minute cache; board is sorted without history
   expect(await detail.json()).toMatchObject({ symbol: "NVDA", history: [{ t: 0, realized7dPct: 40 }] });
   const response = await app.request("/v1/stats/vol");
   expect(response.status).toBe(200);
-  expect(response.headers.get("cache-control")).toBe(header);
+  expect(response.headers.get("cache-control")).toBe(boardHeader);
   const body = await response.json() as { asOf: string; markets: Record<string, unknown>[] };
   expect(Number.isFinite(Date.parse(body.asOf))).toBe(true);
   expect(body.markets.map((row) => row.symbol)).toEqual(["SPY", "AAPL", "NVDA", "Z"]);
   expect(body.markets.every((row) => !("history" in row))).toBe(true);
-  expect(calls).toEqual([{ key: "vol:all", ttl: 600_000 }, { key: "vol:all", ttl: 600_000 }]);
+  expect(calls).toEqual([
+    { key: "vol:all", ttl: 600_000 },
+    { key: "vol:all", ttl: 600_000 }, { key: "markets:list", ttl: 3_000 },
+  ]);
 });

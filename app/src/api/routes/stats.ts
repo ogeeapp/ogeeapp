@@ -9,6 +9,7 @@ import { protocolHistory } from "../../db/queries/analytics";
 import { apiNow } from "../clock";
 import { allMarketVols, sortVolBoard } from "../../db/queries/vol";
 import { hottestTokens } from "../../db/queries/token-flow";
+import { listMarkets } from "../../db/queries/markets";
 
 const route = createRoute({
   method: "get", path: "/v1/stats", tags: ["markets"],
@@ -32,22 +33,23 @@ const hottestTokensRoute = createRoute({
 
 export function registerStatsRoutes(app: OpenAPIHono, deps: ApiDependencies): void {
   app.openapi(hottestTokensRoute, async (context) => {
-    context.header("Cache-Control", "public, max-age=60, stale-while-revalidate=120");
+    context.header("Cache-Control", "public, max-age=5, stale-while-revalidate=30");
     const { limit } = context.req.valid("query");
     const now = await apiNow(deps);
-    const result = await deps.cache.getOrLoad(
-      `stats:token-flow:${limit}`,
-      60_000,
-      () => hottestTokens(deps, limit, now),
-    );
+    const result = await hottestTokens(deps, limit, now);
     return context.json(result, 200);
   });
 
   app.openapi(volRoute, async (context) => {
-    context.header("Cache-Control", "public, max-age=300, stale-while-revalidate=600");
+    context.header("Cache-Control", "public, max-age=5, stale-while-revalidate=30");
     const now = await apiNow(deps);
-    const all = await deps.cache.getOrLoad("vol:all", 600_000, () => allMarketVols(deps, now));
-    const markets = sortVolBoard(all).map(({ history: _history, ...market }) => market);
+    const [all, registered] = await Promise.all([
+      deps.cache.getOrLoad("vol:all", 600_000, () => allMarketVols(deps, now)),
+      deps.cache.getOrLoad("markets:list", 3_000, () => listMarkets(deps)),
+    ]);
+    const launched = new Set(registered.filter((market) => market.launched).map((market) => market.symbol.toUpperCase()));
+    const markets = sortVolBoard(all.filter((market) => launched.has(market.symbol.toUpperCase())))
+      .map(({ history: _history, ...market }) => market);
     return context.json({ asOf: now.toISOString(), markets }, 200);
   });
 
@@ -58,8 +60,13 @@ export function registerStatsRoutes(app: OpenAPIHono, deps: ApiDependencies): vo
   });
 
   app.openapi(historyRoute, async (context) => {
-    context.header("Cache-Control", "public, max-age=30, stale-while-revalidate=120");
+    context.header("Cache-Control", "public, max-age=5, stale-while-revalidate=30");
     const { range } = context.req.valid("query");
-    return context.json(await deps.cache.getOrLoad(`stats:history:${range}`, 60_000, () => protocolHistory(deps, range)), 200);
+    const [history, registered] = await Promise.all([
+      deps.cache.getOrLoad(`stats:history:${range}`, 60_000, () => protocolHistory(deps, range)),
+      deps.cache.getOrLoad("markets:list", 3_000, () => listMarkets(deps)),
+    ]);
+    const launched = new Set(registered.filter((market) => market.launched).map((market) => market.symbol.toUpperCase()));
+    return context.json({ ...history, markets: history.markets.filter((market) => launched.has(market.symbol.toUpperCase())) }, 200);
   });
 }

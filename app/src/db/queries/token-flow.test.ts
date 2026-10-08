@@ -21,15 +21,17 @@ function depsWith(
   calls: Array<{ query: string; values: unknown[] }>,
   flowRows: Array<Record<string, unknown>> = [],
   hottestRows: Array<Record<string, unknown>> = [],
+  marketRows: Array<Record<string, unknown>> = [{ symbol: "NVDA", stock: STOCK, launched: null }],
 ) {
   const cache = new TtlCache();
-  void cache.getOrLoad("markets:list", 60_000, async () => [{ id: 1, symbol: "NVDA" }]);
+  void cache.getOrLoad("markets:list", 60_000, async () => [{ id: 1, symbol: "NVDA", launched: true }]);
   const sql = async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const query = strings.join("?");
     calls.push({ query, values });
     if (query.includes("select stock from markets")) return [{ stock: STOCK }];
     if (query.includes("from token_flow")) return flowRows;
     if (query.includes("from ref_prices")) return hottestRows;
+    if (query.includes("from markets m") && query.includes("market_launch")) return marketRows;
     return [];
   };
   return { cache, config: { NETWORK: "mainnet" }, sql } as unknown as ApiDependencies;
@@ -71,8 +73,8 @@ test("hottestTokens returns ranked fresh rows and the listed flag", async () => 
   const calls: Array<{ query: string; values: unknown[] }> = [];
   const now = new Date("2026-10-08T12:00:00Z");
   const result = await hottestTokens(depsWith(calls, [], [
-    { symbol: "NVDA", mint_burn_usd: "4300000", fetched_at: new Date("2026-10-08T11:59:00Z"), listed: true },
-    { symbol: "USO", mint_burn_usd: "1810000", fetched_at: new Date("2026-10-08T11:59:00Z"), listed: false },
+    { symbol: "NVDA", stock: STOCK, mint_burn_usd: "4300000", fetched_at: new Date("2026-10-08T11:59:00Z") },
+    { symbol: "USO", stock: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", mint_burn_usd: "1810000", fetched_at: new Date("2026-10-08T11:59:00Z") },
   ]), 8, now);
 
   expect(result).toEqual({
@@ -82,8 +84,62 @@ test("hottestTokens returns ranked fresh rows and the listed flag", async () => 
       { symbol: "USO", mintBurnUsd: "1810000", listedOnOgee: false },
     ],
   });
-  expect(calls[0]?.query).toContain("left join markets m on lower(m.stock) = r.stock");
-  expect(calls[0]?.query).toContain("interval '10 minutes'");
-  expect(calls[0]?.query).toContain("order by r.mint_burn_usd desc limit ?");
-  expect(calls[0]?.values).toEqual([now.toISOString(), 8]);
+  const prices = calls.find((call) => call.query.includes("from ref_prices"));
+  const launches = calls.find((call) => call.query.includes("market_launch"));
+  expect(prices?.query).not.toContain("join markets");
+  expect(prices?.query).toContain("interval '10 minutes'");
+  expect(prices?.query).toContain("order by r.mint_burn_usd desc limit ?");
+  expect(prices?.values).toEqual([now.toISOString(), 8]);
+  expect(launches?.query).toContain("left join market_launch");
+  expect(result.tokens).toHaveLength(2);
+});
+
+test("hottest token requires an exact launched symbol on the same stock", async () => {
+  const calls: Array<{ query: string; values: unknown[] }> = [];
+  const now = new Date("2026-10-08T12:00:00Z");
+  const result = await hottestTokens(depsWith(calls, [], [
+    { symbol: "SPY", stock: STOCK, mint_burn_usd: "5", fetched_at: now },
+  ], [
+    { symbol: "SPY", stock: STOCK, launched: false },
+    { symbol: "SPYROOT", stock: STOCK, launched: true },
+    { symbol: "SPYINV", stock: STOCK, launched: false },
+    { symbol: "SPY", stock: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", launched: true },
+  ]), 8, now);
+  expect(result.tokens).toEqual([{ symbol: "SPY", mintBurnUsd: "5", listedOnOgee: false }]);
+  expect(result.tokens).toHaveLength(1);
+});
+
+test("hottest token is listed when its exact symbol and stock curve are launched", async () => {
+  const result = await hottestTokens(depsWith([], [], [
+    { symbol: "SPY", stock: STOCK, mint_burn_usd: "5", fetched_at: new Date("2026-10-08T12:00:00Z") },
+  ], [
+    { symbol: "SPY", stock: STOCK, launched: true },
+    { symbol: "SPYROOT", stock: STOCK, launched: true },
+  ]), 8, new Date("2026-10-08T12:00:00Z"));
+  expect(result.tokens[0]?.listedOnOgee).toBe(true);
+});
+
+test("hottest token flags hide a stock when every matching market is unlaunched", async () => {
+  const result = await hottestTokens(depsWith([], [], [
+    { symbol: "SPY", stock: STOCK, mint_burn_usd: "5", fetched_at: new Date("2026-10-08T12:00:00Z") },
+  ], [
+    { symbol: "SPY", stock: STOCK, launched: false },
+    { symbol: "SPYROOT", stock: STOCK, launched: false },
+  ]), 8, new Date("2026-10-08T12:00:00Z"));
+  expect(result.tokens[0]?.listedOnOgee).toBe(false);
+});
+
+test("hottest token caches raw quotes for sixty seconds and applies fresh launch flags", async () => {
+  const calls: Array<{ query: string; values: unknown[] }> = [];
+  const marketRows = [{ symbol: "SPY", stock: STOCK, launched: false }];
+  const deps = depsWith(calls, [], [
+    { symbol: "SPY", stock: STOCK, mint_burn_usd: "5", fetched_at: new Date("2026-10-08T12:00:00Z") },
+  ], marketRows);
+  const now = new Date("2026-10-08T12:00:00Z");
+  expect((await hottestTokens(deps, 8, now)).tokens[0]?.listedOnOgee).toBe(false);
+  marketRows[0]!.launched = true;
+  expect((await hottestTokens(deps, 8, now)).tokens[0]?.listedOnOgee).toBe(true);
+
+  expect(calls.filter((call) => call.query.includes("from ref_prices"))).toHaveLength(1);
+  expect(calls.filter((call) => call.query.includes("market_launch"))).toHaveLength(2);
 });
