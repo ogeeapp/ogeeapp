@@ -218,6 +218,27 @@ export const marketVolSchema = z.object({
   samples7d: z.number().int().nonnegative(), samples30d: z.number().int().nonnegative(),
   history: z.array(z.object({ t: z.number().int(), realized7dPct: z.number() })),
 });
+export const marketCurvesResponseSchema = z.object({
+  symbol: z.string(),
+  underlying: z.string(),
+  sigmaAnnualPct: percent.nullable(),
+  sigmaSource: z.enum(["realized30d", "realized7d"]).nullable(),
+  moves: z.array(z.number().int()),
+  asOf: isoDateTime,
+  curves: z.array(z.object({
+    curve: z.enum(["squared", "cubed", "root", "downside"]),
+    exponent: z.number(),
+    notation: z.string(),
+    displaySymbol: z.string(),
+    status: z.enum(["live", "coming", "preview"]),
+    marketSymbol: z.string().nullable(),
+    payoffs: z.array(z.object({ movePct: z.number().int(), indexPct: percent.nullable() })),
+    fairCarryDailyPct: percent.nullable(),
+    fairCarryAnnualPct: percent.nullable(),
+    carryDirection: z.enum(["holder_pays", "holder_receives", "none"]).nullable(),
+    liveDailyCarryPct: percent.nullable(),
+  })),
+});
 export const marketTokenFlowSchema = z.object({
   symbol: z.string(),
   asOf: isoDateTime,

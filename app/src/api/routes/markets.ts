@@ -3,10 +3,12 @@ import { z } from "@hono/zod-openapi";
 import type { ApiDependencies } from "../types";
 import {
   candleSchema, carrySchema, errorResponseSchema, limitQuery, marketDetailResponseSchema,
-  marketHoldersResponseSchema, marketTokenFlowQuery, marketTokenFlowSchema, marketVolSchema, marketListResponseSchema,
+  marketCurvesResponseSchema, marketHoldersResponseSchema, marketTokenFlowQuery, marketTokenFlowSchema,
+  marketVolSchema, marketListResponseSchema,
   regimeListSchema, rangeQuery, symbolParams, tradeListSchema,
 } from "../schemas";
 import { marketCandles, marketCarry, getMarketDetail, listMarkets, marketRegimes, marketTrades } from "../../db/queries/markets";
+import { marketCurves } from "../../db/queries/curves";
 import { marketHolders } from "../../db/queries/holders";
 import { marketTokenFlow } from "../../db/queries/token-flow";
 import { dateValue, textValue } from "../types";
@@ -76,6 +78,14 @@ const volRoute = createRoute({
   },
 });
 
+const curvesRoute = createRoute({
+  method: "get", path: "/v1/markets/{symbol}/curves", tags: ["markets"], request: { params: symbolParams },
+  responses: {
+    200: { description: "Power curve payoff and fair carry comparison", content: { "application/json": { schema: marketCurvesResponseSchema } } },
+    404: { description: "Unknown or unlaunched market symbol", content: { "application/json": { schema: errorResponseSchema } } },
+  },
+});
+
 const tokenFlowRoute = createRoute({
   method: "get", path: "/v1/markets/{symbol}/flow", tags: ["markets"],
   request: { params: symbolParams, query: marketTokenFlowQuery },
@@ -112,6 +122,23 @@ export function registerMarketRoutes(app: OpenAPIHono, deps: ApiDependencies): v
     const vol = all.find((market) => market.symbol.toUpperCase() === symbol.toUpperCase());
     if (!vol) return context.json({ error: "NOT_FOUND", message: `Unknown market symbol: ${symbol}` }, 404);
     return context.json({ ...vol, asOf: now.toISOString() }, 200);
+  });
+
+  app.openapi(curvesRoute, async (context) => {
+    context.header("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+    const { symbol } = context.req.valid("param");
+    const markets = await deps.cache.getOrLoad("markets:list", 3_000, () => listMarkets(deps));
+    const visibleMarket = markets.find((market) => market.symbol.toUpperCase() === symbol && market.launched);
+    if (!visibleMarket) return context.json({ error: "NOT_FOUND", message: `Unknown market symbol: ${symbol}` }, 404);
+
+    const now = await apiNow(deps);
+    const table = await deps.cache.getOrLoad(
+      `markets:curves:${symbol}`,
+      60_000,
+      () => marketCurves(deps, symbol, now),
+    );
+    if (!table) return context.json({ error: "NOT_FOUND", message: `Unknown market symbol: ${symbol}` }, 404);
+    return context.json(table, 200);
   });
 
   app.openapi(listRoute, async (context) => {
