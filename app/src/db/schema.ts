@@ -308,6 +308,40 @@ export const tokenFlow = pgTable(
   ],
 );
 
+export const marketLaunch = pgTable("market_launch", {
+  symbol: text("symbol").primaryKey(),
+  launched: boolean("launched").notNull(),
+  updatedAt: at("updated_at").notNull().defaultNow(),
+  note: text("note"),
+});
+
+export const upcomingSubscriptions = pgTable(
+  "upcoming_subscriptions",
+  {
+    upcomingId: text("upcoming_id").notNull(),
+    address: text("address").notNull(),
+    createdAt: at("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ name: "upcoming_subscriptions_pk", columns: [table.upcomingId, table.address] }),
+    index("upcoming_subscriptions_address_idx").on(table.address),
+  ],
+);
+
+export const apiNonces = pgTable(
+  "api_nonces",
+  {
+    address: text("address").notNull(),
+    nonce: text("nonce").notNull(),
+    action: text("action").notNull(),
+    expiresAt: at("expires_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ name: "api_nonces_pk", columns: [table.address, table.nonce] }),
+    index("api_nonces_expires_idx").on(table.expiresAt),
+  ],
+);
+
 export const cursors = pgTable("cursors", {
   name: text("name").primaryKey(),
   block: chainBlock().notNull(),

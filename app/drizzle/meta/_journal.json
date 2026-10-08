@@ -43,6 +43,13 @@
       "when": 1790780000004,
       "tag": "0005_token_flow",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790780000005,
+      "tag": "0006_launch_and_signatures",
+      "breakpoints": true
     }
   ]
 }
