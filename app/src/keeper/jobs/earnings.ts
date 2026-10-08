@@ -111,7 +111,12 @@ async function storedJobMeta(context: KeeperContext): Promise<EarningsJobMeta> {
 }
 
 async function persistFailure(context: KeeperContext, today: string, previousCount: number): Promise<void> {
-  await saveJobMeta(context, "earnings", { failureDate: today, failuresToday: previousCount + 1 });
+  await saveJobMeta(context, "earnings", {
+    failureDate: today,
+    failuresToday: previousCount + 1,
+    error: null,
+    skipped: null,
+  });
 }
 
 async function recordFailedAttempt(context: KeeperContext, today: string, previousCount: number, error: unknown): Promise<never> {
@@ -127,14 +132,14 @@ export async function updateEarnings(context: KeeperContext): Promise<Record<str
   if (previous.lastFetchDate === today) return {};
 
   if (!context.config.ALPHAVANTAGE_API_KEY) {
-    return { skipped: "no key", lastFetchDate: today };
+    return { skipped: "no key", lastFetchDate: today, error: null };
   }
 
   const previousFailures = previous.failureDate === today && Number.isInteger(previous.failuresToday)
     ? Math.max(0, previous.failuresToday!)
     : 0;
   if (previousFailures >= 3) {
-    return { skipped: "retry cap", failureDate: today, failuresToday: previousFailures };
+    return { skipped: "retry cap", failureDate: today, failuresToday: previousFailures, error: null };
   }
 
   const wanted = new Set(earningsSymbols(
@@ -154,7 +159,7 @@ export async function updateEarnings(context: KeeperContext): Promise<Record<str
     rows = parseEarningsCsv(text, wanted);
   } catch (error) {
     if (error instanceof Error && error.message === "Alpha Vantage returned no CSV") {
-      return { lastFetchDate: today, error: "no csv", failuresToday: 0, failureDate: today };
+      return { lastFetchDate: today, error: "no csv", skipped: null, failuresToday: 0, failureDate: today };
     }
     return recordFailedAttempt(context, today, previousFailures, error);
   }
@@ -177,6 +182,8 @@ export async function updateEarnings(context: KeeperContext): Promise<Record<str
     lastFetchDate: today,
     rows: rows.length,
     symbols: wanted.size,
+    error: null,
+    skipped: null,
     failureDate: today,
     failuresToday: 0,
   };

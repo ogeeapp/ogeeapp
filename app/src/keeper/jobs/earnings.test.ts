@@ -109,7 +109,7 @@ test("updateEarnings skips without a key and after today's successful fetch", as
   const withoutKey = fakeContext();
   let calls = 0;
   await withFetch(async () => { calls += 1; return new Response(""); }, async () => {
-    expect(await updateEarnings(withoutKey.context)).toMatchObject({ skipped: "no key", lastFetchDate: "2026-10-08" });
+    expect(await updateEarnings(withoutKey.context)).toMatchObject({ skipped: "no key", lastFetchDate: "2026-10-08", error: null });
   });
   expect(calls).toBe(0);
 
@@ -154,12 +154,29 @@ test("updateEarnings treats a non-CSV notice as the daily result and preserves s
   const { context, statements } = fakeContext({ key: "provider-secret" });
   const result = await withFetch(async () => new Response('{"Note":"rate limit"}', { status: 200 }),
     () => updateEarnings(context));
-  expect(result).toMatchObject({ lastFetchDate: "2026-10-08", error: "no csv" });
+  expect(result).toMatchObject({ lastFetchDate: "2026-10-08", error: "no csv", skipped: null });
   expect(statements.some((statement) => statement.query.includes("delete from earnings"))).toBe(false);
 });
 
+test("updateEarnings clears stale error and skip markers after a later successful import", async () => {
+  const fixture = [
+    "symbol,name,reportDate,fiscalDateEnding,estimate,currency,timeOfTheDay",
+    "TSLA,Tesla Inc,2026-10-21,2026-09-30,1.0,USD,post-market",
+  ].join("\n");
+  const { context } = fakeContext({
+    key: "provider-secret",
+    jobMeta: { lastFetchDate: "2026-10-07", error: "no csv", skipped: "retry cap" },
+  });
+  const result = await withFetch(async () => new Response(fixture, { status: 200 }), () => updateEarnings(context));
+
+  expect(result).toMatchObject({ lastFetchDate: "2026-10-08", error: null, skipped: null, rows: 1 });
+});
+
 test("updateEarnings persists a capped failure count without leaking the provider key", async () => {
-  const { context, statements, logs, getMeta } = fakeContext({ key: "provider-secret" });
+  const { context, statements, logs, getMeta } = fakeContext({
+    key: "provider-secret",
+    jobMeta: { failureDate: "2026-10-07", failuresToday: 2, error: "no csv", skipped: "old skip" },
+  });
   let calls = 0;
   await withFetch(async (input) => {
     calls += 1;
@@ -168,11 +185,12 @@ test("updateEarnings persists a capped failure count without leaking the provide
     for (let attempt = 0; attempt < 3; attempt += 1) {
       await expect(updateEarnings(context)).rejects.toThrow("www.alphavantage.co request failed");
     }
-    expect(await updateEarnings(context)).toMatchObject({ skipped: "retry cap", failuresToday: 3 });
+    expect(await updateEarnings(context)).toMatchObject({ skipped: "retry cap", failuresToday: 3, error: null });
   });
 
   expect(calls).toBe(3);
   expect(getMeta()).toMatchObject({ failureDate: "2026-10-08", failuresToday: 3 });
+  expect(getMeta()).toMatchObject({ error: null, skipped: null });
   expect(statements.filter((statement) => statement.query.includes("insert into keeper_status (job, meta)"))).toHaveLength(3);
   expect(JSON.stringify(logs)).not.toContain("provider-secret");
   expect(JSON.stringify(logs)).not.toContain("apikey=");
