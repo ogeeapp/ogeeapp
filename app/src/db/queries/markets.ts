@@ -1,4 +1,4 @@
-import { fixed, decimal, fromBps, projectNormFactor, priceAtNormFactor, changePercent, ratioPercent, fractionPercent } from "../../lib/fixed";
+import { fixed, decimal, fromBps, projectNormFactor, priceAtNormFactor, changePercent, ratioPercent, fractionPercent, multiply, WAD } from "../../lib/fixed";
 import { apiNow } from "../../api/clock";
 import type { ApiDependencies, DbRow } from "../../api/types";
 import { asRows, dateValue, jsonRecord, numberValue, textValue } from "../../api/types";
@@ -28,6 +28,15 @@ interface MarketRawRow extends DbRow {
   oracle_updated_at: Date | string | null;
   previous_price: string | null;
   volume_24h: string | null;
+  ref_bid: string | null;
+  ref_ask: string | null;
+  ref_token_bid: string | null;
+  ref_token_ask: string | null;
+  ref_daily_high: string | null;
+  ref_daily_low: string | null;
+  ref_halt: boolean | null;
+  ref_generated_at: Date | string | null;
+  ref_fetched_at: Date | string | null;
 }
 
 interface SparkRow extends DbRow {
@@ -66,6 +75,7 @@ export interface MarketView {
   asOf: string | null;
   sparkline: { t: number; p: string }[];
   corpAction?: { kind: string; effectiveAt: string | null; status: string };
+  reference?: MarketReference | null;
   quoteParams: {
     feeBps: number;
     spreadBps: number;
@@ -78,6 +88,70 @@ export interface MarketView {
   };
   config: Record<string, unknown>;
   stats: { trades24h: number; holders: number; buyVolume24hUsd: string; sellVolume24hUsd: string };
+}
+
+export interface MarketReference {
+  bid: string;
+  ask: string;
+  mid: string;
+  dayHigh: string | null;
+  dayLow: string | null;
+  lagBps: number | null;
+  halt: boolean;
+  quotedAt: string;
+  stale: boolean;
+}
+
+function fixedValue(value: string | null): bigint | null {
+  if (value === null || !/^\d+(?:\.\d+)?$/.test(value)) return null;
+  try {
+    return fixed(value);
+  } catch {
+    return null;
+  }
+}
+
+export function marketReference(
+  row: Pick<MarketRawRow, "ref_bid" | "ref_ask" | "ref_token_bid" | "ref_token_ask" | "ref_daily_high" | "ref_daily_low" | "ref_halt" | "ref_generated_at" | "ref_fetched_at">,
+  oracleSpot: string | null,
+  nowMs: number,
+): MarketReference | null {
+  const tokenBid = fixedValue(row.ref_token_bid);
+  const tokenAsk = fixedValue(row.ref_token_ask);
+  if (tokenBid === null || tokenAsk === null || tokenBid <= 0n || tokenAsk <= 0n) return null;
+  const mid = (tokenBid + tokenAsk) / 2n;
+  if (mid <= 0n) return null;
+
+  const rawBid = fixedValue(row.ref_bid);
+  const rawAsk = fixedValue(row.ref_ask);
+  const rawMid = rawBid !== null && rawAsk !== null ? (rawBid + rawAsk) / 2n : 0n;
+  const tokenRatio = rawMid > 0n ? (mid * WAD) / rawMid : null;
+  const dailyHigh = fixedValue(row.ref_daily_high);
+  const dailyLow = fixedValue(row.ref_daily_low);
+  const dayHigh = tokenRatio !== null && dailyHigh !== null ? decimal(multiply(dailyHigh, tokenRatio)) : null;
+  const dayLow = tokenRatio !== null && dailyLow !== null ? decimal(multiply(dailyLow, tokenRatio)) : null;
+
+  const oracle = fixedValue(oracleSpot);
+  const lagBps = oracle !== null && oracle > 0n
+    ? Math.round(Number(((oracle - mid) * 10_000n * WAD) / mid) / 1e18 * 10) / 10
+    : null;
+  const generatedAt = dateValue(row.ref_generated_at);
+  const fetchedAt = dateValue(row.ref_fetched_at);
+  const stale = !generatedAt || !fetchedAt
+    || nowMs - fetchedAt.getTime() > 180_000
+    || nowMs - generatedAt.getTime() > 600_000;
+
+  return {
+    bid: decimal(tokenBid),
+    ask: decimal(tokenAsk),
+    mid: decimal(mid),
+    dayHigh,
+    dayLow,
+    lagBps,
+    halt: row.ref_halt === true,
+    quotedAt: generatedAt?.toISOString() ?? new Date(0).toISOString(),
+    stale,
+  };
 }
 
 function configNumber(config: Record<string, unknown>, name: string, fallback: number): number {
@@ -114,8 +188,13 @@ export async function listMarkets(deps: ApiDependencies, requestedNow?: Date): P
       t.ts, t.spot, t."index", t.norm_factor, t.price, t.bid, t.ask, t.carry_wad, t.regime,
       t.buys_paused, t.liability, t.hedge_units, t.hedge_target, t.oracle_updated_at,
       prev.price as previous_price,
-      coalesce(vol.volume_24h, 0)::text as volume_24h
+      coalesce(vol.volume_24h, 0)::text as volume_24h,
+      r.bid::text as ref_bid, r.ask::text as ref_ask,
+      r.token_bid::text as ref_token_bid, r.token_ask::text as ref_token_ask,
+      r.daily_high::text as ref_daily_high, r.daily_low::text as ref_daily_low,
+      r.halt as ref_halt, r.generated_at as ref_generated_at, r.fetched_at as ref_fetched_at
     from markets m
+    left join ref_prices r on lower(r.stock) = lower(m.stock)
     left join lateral (
       select * from ticks where market_id = m.id and ts <= ${nowIso}::timestamptz order by ts desc limit 1
     ) t on true
@@ -238,6 +317,7 @@ export async function listMarkets(deps: ApiDependencies, requestedNow?: Date): P
       oracleUpdatedAt: oracleTs?.toISOString() ?? null,
       asOf: lastTs?.toISOString() ?? null,
       sparkline,
+      reference: marketReference(row, row.spot, now.getTime()),
       quoteParams: {
         feeBps: Number(publicConfig.feeBps),
         spreadBps,

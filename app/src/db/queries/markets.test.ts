@@ -1,7 +1,44 @@
 import { expect, test } from "bun:test";
 import { TtlCache } from "../../api/cache";
 import type { ApiDependencies } from "../../api/types";
-import { getMarketDetail, listMarkets, marketCandles, mergeVolume } from "./markets";
+import { getMarketDetail, listMarkets, marketCandles, marketReference, mergeVolume } from "./markets";
+
+const freshReferenceRow = {
+  ref_bid: "100", ref_ask: "102", ref_token_bid: "200", ref_token_ask: "202",
+  ref_daily_high: "103", ref_daily_low: "99", ref_halt: false,
+  ref_generated_at: new Date("2026-10-08T12:00:00Z"),
+  ref_fetched_at: new Date("2026-10-08T12:00:00Z"),
+};
+
+test("marketReference scales the day range and reports signed oracle lag with exact decimal math", () => {
+  expect(marketReference(freshReferenceRow, "202", Date.parse("2026-10-08T12:00:00Z"))).toEqual({
+    bid: "200", ask: "202", mid: "201",
+    dayHigh: "204.980198019801980197", dayLow: "197.019801980198019801",
+    lagBps: 49.8, halt: false, quotedAt: "2026-10-08T12:00:00.000Z", stale: false,
+  });
+});
+
+test("marketReference marks each old timestamp stale and rejects missing or nonpositive token prices", () => {
+  const now = Date.parse("2026-10-08T12:00:00Z");
+  expect(marketReference({ ...freshReferenceRow, ref_fetched_at: new Date(now - 180_001) }, "202", now)?.stale).toBe(true);
+  expect(marketReference({ ...freshReferenceRow, ref_generated_at: new Date(now - 600_001) }, "202", now)?.stale).toBe(true);
+  expect(marketReference({ ...freshReferenceRow, ref_token_bid: null }, "202", now)).toBeNull();
+  expect(marketReference({ ...freshReferenceRow, ref_token_ask: "0" }, "202", now)).toBeNull();
+  expect(marketReference(freshReferenceRow, "0", now)?.lagBps).toBeNull();
+});
+
+test("listMarkets reads reference prices through the stock address join", async () => {
+  const queries: string[] = [];
+  const sql = async (strings: TemplateStringsArray) => {
+    const query = strings.join("?");
+    queries.push(query);
+    return [];
+  };
+  await listMarkets({ sql, cache: new TtlCache(), config: { NETWORK: "mainnet" } } as unknown as ApiDependencies,
+    new Date("2026-10-08T12:00:00Z"));
+  expect(queries[0]).toContain("left join ref_prices r on lower(r.stock) = lower(m.stock)");
+  expect(queries[0]).toContain("r.token_bid::text as ref_token_bid");
+});
 
 test("market list and detail add configured metadata without inventing unknown labels", async () => {
   const sql = async (strings: TemplateStringsArray) => {

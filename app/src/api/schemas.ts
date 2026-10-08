@@ -45,6 +45,11 @@ export const marketSchema = z.object({
   dailyCarryPct: percent, change24hPct: percent, volume24hUsd: decimal, openInterestUsd: decimal,
   capacityUsd: decimal, utilizationPct: percent, oracleUpdatedAt: isoDateTime.nullable(), asOf: isoDateTime.nullable(),
   sparkline: sparklineSchema,
+  reference: z.object({
+    bid: decimal, ask: decimal, mid: decimal,
+    dayHigh: decimal.nullable(), dayLow: decimal.nullable(),
+    lagBps: z.number().finite().nullable(), halt: z.boolean(), quotedAt: isoDateTime, stale: z.boolean(),
+  }).nullable().optional(),
   corpAction: z.object({ kind: z.string(), effectiveAt: isoDateTime.nullable(), status: z.string() }).optional(),
   quoteParams: z.object({ feeBps: z.number().int(), spreadBps: z.number().int(), bandBps: z.number().int(), impactBps: z.number().int(),
     maxTradeUsd: decimal, minTradeUsd: decimal, capacityUsd: decimal, globalCapacityUsd: decimal }),
