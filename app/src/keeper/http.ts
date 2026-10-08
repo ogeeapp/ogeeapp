@@ -33,7 +33,11 @@ export async function fetchJsonWithTimeout(
   init: FetchInit = {},
 ): Promise<unknown> {
   const response = await request(url, init, "application/json");
-  return response.json();
+  try {
+    return await response.json();
+  } catch {
+    throw new Error(`${hostOf(url)} response body read failed`);
+  }
 }
 
 export async function fetchTextWithTimeout(
@@ -41,5 +45,9 @@ export async function fetchTextWithTimeout(
   init: FetchInit = {},
 ): Promise<string> {
   const response = await request(url, init, "text/csv, text/plain, */*");
-  return response.text();
+  try {
+    return await response.text();
+  } catch {
+    throw new Error(`${hostOf(url)} response body read failed`);
+  }
 }

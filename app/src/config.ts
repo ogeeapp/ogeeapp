@@ -12,6 +12,7 @@ const envSchema = z.object({
   CHAIN_ID: z.coerce.number().int().positive().default(4663),
   DATABASE_URL: z.string().url(),
   POSTGRES_PASSWORD: z.string().min(1),
+  ALPHAVANTAGE_API_KEY: z.string().default(""),
   ALCHEMY_API_KEYS: z.string().default(""),
   ALCHEMY_URL_TEMPLATE: z
     .string()
@@ -29,7 +30,7 @@ const envSchema = z.object({
   INDEXER_POLL_BASE_MS: z.coerce.number().int().positive().default(15000),
   INDEXER_POLL_IDLE_MS: z.coerce.number().int().positive().default(60000),
   DEPLOYMENT_FILE: z.string().min(1).default("/app/deployments/fork.json"),
-  KEEPER_ENABLED_JOBS: z.string().default("sessions,accrue,hedge,carry,risk,corp-actions,reference"),
+  KEEPER_ENABLED_JOBS: z.string().default("sessions,accrue,hedge,carry,risk,corp-actions,reference,earnings"),
   KEEPER_DRY_RUN: z.enum(["0", "1"]).default("0").transform((value) => value === "1"),
   // Accrue every market once any market's last accrual is this old while positions are open. Paused marks fall
   // back to the last accrued price, so a short interval keeps that price close to the feed.
@@ -109,6 +110,7 @@ export function safeConfigSummary(config: RuntimeConfig): Record<string, string 
     network: config.NETWORK,
     chainId: config.CHAIN_ID,
     databaseConfigured: Boolean(config.DATABASE_URL),
+    alphaVantageKeyConfigured: Boolean(config.ALPHAVANTAGE_API_KEY),
     publicRpcHost: new URL(config.PUBLIC_RPC_URL).host,
     rpcOverrideEnabled: Boolean(config.RPC_URL_OVERRIDE.trim()),
     alchemyKeyCount: config.ALCHEMY_API_KEYS.length,
