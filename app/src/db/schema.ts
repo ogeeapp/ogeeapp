@@ -292,6 +292,22 @@ export const refPrices = pgTable(
   (table) => [index("ref_prices_symbol_idx").on(table.symbol)],
 );
 
+export const tokenFlow = pgTable(
+  "token_flow",
+  {
+    stock: text("stock").notNull(),
+    flowDate: date("flow_date", { mode: "string" }).notNull(),
+    symbol: text("symbol").notNull(),
+    mintBurnUsd: amount("mint_burn_usd").notNull(),
+    firstSeenAt: at("first_seen_at").notNull(),
+    updatedAt: at("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ name: "token_flow_pk", columns: [table.stock, table.flowDate] }),
+    index("token_flow_date_idx").on(table.flowDate.desc()),
+  ],
+);
+
 export const cursors = pgTable("cursors", {
   name: text("name").primaryKey(),
   block: chainBlock().notNull(),

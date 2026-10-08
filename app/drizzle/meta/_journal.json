@@ -36,6 +36,13 @@
       "when": 1790780000003,
       "tag": "0004_ref_prices",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790780000004,
+      "tag": "0005_token_flow",
+      "breakpoints": true
     }
   ]
 }
