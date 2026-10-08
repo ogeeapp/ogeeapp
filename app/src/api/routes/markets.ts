@@ -4,11 +4,12 @@ import type { ApiDependencies } from "../types";
 import {
   candleSchema, carrySchema, errorResponseSchema, limitQuery, marketDetailResponseSchema,
   marketCurvesResponseSchema, marketHoldersResponseSchema, marketTokenFlowQuery, marketTokenFlowSchema,
-  marketVolSchema, marketListResponseSchema,
+  marketVolSchema, marketListResponseSchema, backtestQuery, marketBacktestResponseSchema,
   regimeListSchema, rangeQuery, symbolParams, tradeListSchema,
 } from "../schemas";
 import { marketCandles, marketCarry, getMarketDetail, listMarkets, marketRegimes, marketTrades } from "../../db/queries/markets";
 import { marketCurves } from "../../db/queries/curves";
+import { marketBacktest } from "../../db/queries/backtest";
 import { marketHolders } from "../../db/queries/holders";
 import { marketTokenFlow } from "../../db/queries/token-flow";
 import { dateValue, textValue } from "../types";
@@ -95,6 +96,15 @@ const tokenFlowRoute = createRoute({
   },
 });
 
+const backtestRoute = createRoute({
+  method: "get", path: "/v1/markets/{symbol}/backtest", tags: ["markets"],
+  request: { params: symbolParams, query: backtestQuery },
+  responses: {
+    200: { description: "Hypothetical market backtest", content: { "application/json": { schema: marketBacktestResponseSchema } } },
+    404: { description: "Unknown market symbol", content: { "application/json": { schema: errorResponseSchema } } },
+  },
+});
+
 function publicResponse(context: { header: (name: string, value: string) => void }): void {
   context.header("Cache-Control", cacheHeader);
 }
@@ -139,6 +149,23 @@ export function registerMarketRoutes(app: OpenAPIHono, deps: ApiDependencies): v
     );
     if (!table) return context.json({ error: "NOT_FOUND", message: `Unknown market symbol: ${symbol}` }, 404);
     return context.json(table, 200);
+  });
+
+  app.openapi(backtestRoute, async (context) => {
+    context.header("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+    const { symbol } = context.req.valid("param");
+    const { days } = context.req.valid("query");
+    const markets = await deps.cache.getOrLoad("markets:list", 3_000, () => listMarkets(deps));
+    const visibleMarket = markets.find((market) => market.symbol.toUpperCase() === symbol && market.launched);
+    if (!visibleMarket) return context.json({ error: "NOT_FOUND", message: `Unknown market symbol: ${symbol}` }, 404);
+
+    const result = await deps.cache.getOrLoad(
+      `markets:backtest:${symbol}:${days}`,
+      60_000,
+      () => marketBacktest(deps, symbol, days),
+    );
+    if (!result) return context.json({ error: "NOT_FOUND", message: `Unknown market symbol: ${symbol}` }, 404);
+    return context.json(result, 200);
   });
 
   app.openapi(listRoute, async (context) => {

@@ -239,6 +239,20 @@ export const marketCurvesResponseSchema = z.object({
     liveDailyCarryPct: percent.nullable(),
   })),
 });
+
+export const backtestQuery = z.object({
+  days: z.enum(["7", "30"]).default("7").transform((value) => Number(value) as 7 | 30),
+});
+export const marketBacktestResponseSchema = z.object({
+  symbol: z.string(), days: z.union([z.literal(7), z.literal(30)]), available: z.boolean(),
+  reason: z.string().optional(), shortened: z.boolean().optional(), actualDays: z.number().int().positive().optional(),
+  startAt: isoDateTime.optional(), endAt: isoDateTime.optional(), investUsd: decimal.optional(),
+  entryPrice: decimal.optional(), exitPrice: decimal.optional(), tokens: decimal.optional(),
+  markValueUsd: decimal.optional(), valueUsd: decimal.optional(), costsUsd: decimal.optional(),
+  changePct: percent.optional(), markChangePct: percent.optional(), stockChangePct: percent.optional(),
+  carryPct: percent.nullable().optional(),
+  points: z.array(z.object({ t: z.number().int(), valueUsd: decimal })),
+});
 export const marketTokenFlowSchema = z.object({
   symbol: z.string(),
   asOf: isoDateTime,
