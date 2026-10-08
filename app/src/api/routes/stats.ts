@@ -1,10 +1,14 @@
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import type { ApiDependencies } from "../types";
-import { historyRangeQuery, statsHistoryResponseSchema, statsResponseSchema, volBoardResponseSchema } from "../schemas";
+import {
+  historyRangeQuery, hottestTokensQuery, hottestTokensSchema,
+  statsHistoryResponseSchema, statsResponseSchema, volBoardResponseSchema,
+} from "../schemas";
 import { aggregateStats } from "../../db/queries/stats";
 import { protocolHistory } from "../../db/queries/analytics";
 import { apiNow } from "../clock";
 import { allMarketVols, sortVolBoard } from "../../db/queries/vol";
+import { hottestTokens } from "../../db/queries/token-flow";
 
 const route = createRoute({
   method: "get", path: "/v1/stats", tags: ["markets"],
@@ -21,7 +25,24 @@ const volRoute = createRoute({
   responses: { 200: { description: "Markets ranked by carry relative to realized variance", content: { "application/json": { schema: volBoardResponseSchema } } } },
 });
 
+const hottestTokensRoute = createRoute({
+  method: "get", path: "/v1/stats/token-flow", tags: ["markets"], request: { query: hottestTokensQuery },
+  responses: { 200: { description: "Robinhood stock tokens ranked by today's mint and redeem flow", content: { "application/json": { schema: hottestTokensSchema } } } },
+});
+
 export function registerStatsRoutes(app: OpenAPIHono, deps: ApiDependencies): void {
+  app.openapi(hottestTokensRoute, async (context) => {
+    context.header("Cache-Control", "public, max-age=60, stale-while-revalidate=120");
+    const { limit } = context.req.valid("query");
+    const now = await apiNow(deps);
+    const result = await deps.cache.getOrLoad(
+      `stats:token-flow:${limit}`,
+      60_000,
+      () => hottestTokens(deps, limit, now),
+    );
+    return context.json(result, 200);
+  });
+
   app.openapi(volRoute, async (context) => {
     context.header("Cache-Control", "public, max-age=300, stale-while-revalidate=600");
     const now = await apiNow(deps);

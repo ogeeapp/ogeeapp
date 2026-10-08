@@ -174,6 +174,20 @@ export const marketVolSchema = z.object({
   samples7d: z.number().int().nonnegative(), samples30d: z.number().int().nonnegative(),
   history: z.array(z.object({ t: z.number().int(), realized7dPct: z.number() })),
 });
+export const marketTokenFlowSchema = z.object({
+  symbol: z.string(),
+  asOf: isoDateTime,
+  todayUsd: decimal.nullable(),
+  days: z.array(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), mintBurnUsd: decimal })),
+});
+export const hottestTokensSchema = z.object({
+  asOf: isoDateTime,
+  tokens: z.array(z.object({ symbol: z.string(), mintBurnUsd: decimal, listedOnOgee: z.boolean() })),
+});
+export const marketTokenFlowQuery = z.object({
+  days: z.enum(["7", "30"]).default("30"),
+});
+export const hottestTokensQuery = z.object({ limit: z.coerce.number().int().min(1).max(20).default(8) });
 export const volBoardResponseSchema = z.object({
   asOf: isoDateTime,
   markets: z.array(marketVolSchema.omit({ asOf: true, history: true })),

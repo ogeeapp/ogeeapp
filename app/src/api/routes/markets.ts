@@ -3,10 +3,12 @@ import { z } from "@hono/zod-openapi";
 import type { ApiDependencies } from "../types";
 import {
   candleSchema, carrySchema, errorResponseSchema, limitQuery, marketDetailResponseSchema,
-  marketHoldersResponseSchema, marketVolSchema, marketListResponseSchema, regimeListSchema, rangeQuery, symbolParams, tradeListSchema,
+  marketHoldersResponseSchema, marketTokenFlowQuery, marketTokenFlowSchema, marketVolSchema, marketListResponseSchema,
+  regimeListSchema, rangeQuery, symbolParams, tradeListSchema,
 } from "../schemas";
 import { marketCandles, marketCarry, getMarketDetail, listMarkets, marketRegimes, marketTrades } from "../../db/queries/markets";
 import { marketHolders } from "../../db/queries/holders";
+import { marketTokenFlow } from "../../db/queries/token-flow";
 import { dateValue, textValue } from "../types";
 
 import { apiNow } from "../clock";
@@ -70,11 +72,34 @@ const volRoute = createRoute({
   },
 });
 
+const tokenFlowRoute = createRoute({
+  method: "get", path: "/v1/markets/{symbol}/flow", tags: ["markets"],
+  request: { params: symbolParams, query: marketTokenFlowQuery },
+  responses: {
+    200: { description: "Daily Robinhood stock token flow", content: { "application/json": { schema: marketTokenFlowSchema } } },
+    404: { description: "Unknown market symbol", content: { "application/json": { schema: errorResponseSchema } } },
+  },
+});
+
 function publicResponse(context: { header: (name: string, value: string) => void }): void {
   context.header("Cache-Control", cacheHeader);
 }
 
 export function registerMarketRoutes(app: OpenAPIHono, deps: ApiDependencies): void {
+  app.openapi(tokenFlowRoute, async (context) => {
+    context.header("Cache-Control", "public, max-age=60, stale-while-revalidate=120");
+    const { symbol } = context.req.valid("param");
+    const days = Number(context.req.valid("query").days) as 7 | 30;
+    const now = await apiNow(deps);
+    const flow = await deps.cache.getOrLoad(
+      `markets:flow:${symbol}:${days}`,
+      60_000,
+      () => marketTokenFlow(deps, symbol, days, now),
+    );
+    if (!flow) return context.json({ error: "NOT_FOUND", message: `Unknown market symbol: ${symbol}` }, 404);
+    return context.json(flow, 200);
+  });
+
   app.openapi(volRoute, async (context) => {
     context.header("Cache-Control", "public, max-age=300, stale-while-revalidate=600");
     const { symbol } = context.req.valid("param");

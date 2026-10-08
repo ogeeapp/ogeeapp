@@ -34,3 +34,15 @@ test("holders for a known market are cached publicly for thirty seconds", async 
   expect(body.distribution).toHaveLength(5);
   expect(body.topHolders).toHaveLength(1);
 });
+
+test("token flow rejects unsupported day windows", async () => {
+  const response = await appWith([]).request("/v1/markets/NVDA/flow?days=9");
+  expect(response.status).toBe(400);
+  expect(await response.json()).toMatchObject({ error: "BAD_REQUEST" });
+});
+
+test("token flow for an unknown market returns 404", async () => {
+  const response = await appWith([]).request("/v1/markets/NOPE/flow");
+  expect(response.status).toBe(404);
+  expect(await response.json()).toEqual({ error: "NOT_FOUND", message: "Unknown market symbol: NOPE" });
+});
