@@ -41,4 +41,5 @@ test("sigmaFromCarry inverts convex curves and rejects impossible root carry", (
   expect(sigmaFromCarry(0.5, 0.01)).toBeNull();
   expect(sigmaFromCarry(1, 0)).toBeNull();
   expect(sigmaFromCarry(1 - 1e-12, Number.MAX_VALUE)).toBeNull();
+  expect(sigmaFromCarry(1e308, 1)).toBeNull();
 });

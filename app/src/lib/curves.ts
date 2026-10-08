@@ -40,7 +40,7 @@ export function fairCarryDailyPct(exponent: number, sigmaAnnual: number): number
 export function sigmaFromCarry(exponent: number, carryAnnual: number): number | null {
   if (!Number.isFinite(exponent) || !Number.isFinite(carryAnnual)) return null;
   const coefficient = 0.5 * exponent * (exponent - 1);
-  if (coefficient === 0) return null;
+  if (!Number.isFinite(coefficient) || coefficient === 0) return null;
   const variance = carryAnnual / coefficient;
   if (!Number.isFinite(variance) || variance < 0) return null;
   const sigma = Math.sqrt(variance);
