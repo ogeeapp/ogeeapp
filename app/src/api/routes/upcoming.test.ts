@@ -134,6 +134,19 @@ test("upcoming write routes reject unknown ids, malformed bodies and bad signatu
   const malformed = await app.request("/v1/upcoming/spcx/subscribe", writeRequest("POST", "spcx", {}));
   expect(malformed.status).toBe(400);
 
+  const missingBody = await app.request("/v1/upcoming/spcx/subscribe", {
+    method: "POST",
+    headers: { origin },
+  });
+  expect(missingBody.status).toBe(400);
+
+  const invalidJson = await app.request("/v1/upcoming/spcx/subscribe", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin },
+    body: "{",
+  });
+  expect(invalidJson.status).toBe(400);
+
   const bad = await signedBody("upcoming.subscribe", "spcx");
   const unauthorized = await app.request("/v1/upcoming/spcx/subscribe", writeRequest("POST", "spcx", {
     ...bad.body, signature: `0x${"0".repeat(130)}`,

@@ -17,7 +17,7 @@ const listRoute = createRoute({
 
 const writeRequest = {
   params: idParams,
-  body: { content: { "application/json": { schema: signedBodySchema } } },
+  body: { required: true, content: { "application/json": { schema: signedBodySchema } } },
 };
 const subscribeRoute = createRoute({
   method: "post", path: "/v1/upcoming/{id}/subscribe", tags: ["markets"], request: writeRequest,
