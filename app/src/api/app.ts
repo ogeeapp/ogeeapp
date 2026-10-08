@@ -1,5 +1,6 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { cors } from "hono/cors";
+import { bodyLimit } from "hono/body-limit";
 import type { ApiDependencies } from "./types";
 import { openApiDocument } from "./openapi";
 import { registerAccountRoutes } from "./routes/accounts";
@@ -25,7 +26,7 @@ export function createApiApp(deps: ApiDependencies) {
 
   app.use("*", cors({
     origin: (origin) => origin && allowedOrigins.has(origin) ? origin : "",
-    allowMethods: ["GET", "OPTIONS"],
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
     exposeHeaders: ["Cache-Control", "Content-Disposition", "X-Ogee-History-Complete", "X-Ogee-Truncated"],
     maxAge: 600,
@@ -46,6 +47,13 @@ export function createApiApp(deps: ApiDependencies) {
     windowMs: 60_000,
     clientIpHeader: deps.config.API_CLIENT_IP_HEADER,
   }));
+  app.use("/v1/upcoming/*", bodyLimit({ maxSize: 4 * 1024 }));
+  const writeLimiter = rateLimit({
+    limit: deps.config.API_RATE_LIMIT_PER_MINUTE === 0 ? 0 : 20,
+    windowMs: 60_000,
+    clientIpHeader: deps.config.API_CLIENT_IP_HEADER,
+  });
+  app.on(["POST", "PUT", "DELETE"], "/v1/*", writeLimiter);
 
   registerHealthRoutes(app, deps);
   registerConfigRoutes(app, deps);
