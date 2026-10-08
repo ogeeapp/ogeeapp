@@ -5,6 +5,7 @@ import { asRows, dateValue, jsonRecord, numberValue, textValue } from "../../api
 import { marketSession, type MarketSession } from "./sessions";
 import { regimeName } from "./shared";
 import { marketMeta, type MarketMeta } from "../../config/market-meta";
+import { decodeKind, underlyingOf, type Curve } from "../../lib/market-kind";
 
 interface MarketRawRow extends DbRow {
   id: number | string;
@@ -55,6 +56,11 @@ interface CorpActionRow extends DbRow {
 export interface MarketView {
   id: number;
   symbol: string;
+  curve: Curve;
+  exponent: number | null;
+  alwaysOpen: boolean;
+  underlying: string;
+  launched: boolean;
   meta?: MarketMeta | undefined;
   token: string;
   regime: "open" | "off_hours" | "paused";
@@ -210,7 +216,7 @@ export async function listMarkets(deps: ApiDependencies, requestedNow?: Date): P
   const rawMarkets = asRows<MarketRawRow>(marketResult);
   if (rawMarkets.length === 0) return [];
 
-  const [vaultResult, sparkResult, corpResult, sessionResult] = await Promise.all([
+  const [vaultResult, sparkResult, corpResult, sessionResult, launchResult] = await Promise.all([
     deps.sql`select nav, total_liability, max_global_exposure_bps from vault_ticks order by ts desc limit 1`,
     deps.sql`
       select market_id, floor(extract(epoch from bucket))::bigint as t, price from (
@@ -230,12 +236,15 @@ export async function listMarkets(deps: ApiDependencies, requestedNow?: Date): P
         effective_at asc nulls last, process_date asc nulls last, updated_at desc
     `,
     marketSession(deps, now),
+    deps.sql`select symbol, launched from market_launch`,
   ]);
   const { open, opensAt, closesAt } = sessionResult;
   const session = { open, opensAt, closesAt };
   const vaultRows = asRows<DbRow>(vaultResult);
   const sparkRows = asRows<SparkRow>(sparkResult);
   const corpRows = asRows<CorpActionRow>(corpResult);
+  const launchRows = asRows<DbRow>(launchResult);
+  const launchBySymbol = new Map(launchRows.map((row) => [textValue(row.symbol).toUpperCase(), row.launched === true]));
   const vault = vaultRows[0];
   const nav = fixed(vault?.nav as string | undefined);
   const maxGlobalExposureBps = numberValue(vault?.max_global_exposure_bps, 5000);
@@ -270,6 +279,7 @@ export async function listMarkets(deps: ApiDependencies, requestedNow?: Date): P
   return rawMarkets.map((row) => {
     const marketId = numberValue(row.id);
     const config = jsonRecord(row.config);
+    const { curve, exponent, alwaysOpen } = decodeKind(config.kind);
     const regime = regimeName(row.regime);
     const lastTs = dateValue(row.ts);
     const oracleTs = dateValue(row.oracle_updated_at);
@@ -298,6 +308,11 @@ export async function listMarkets(deps: ApiDependencies, requestedNow?: Date): P
     const view: MarketView = {
       id: marketId,
       symbol: row.symbol,
+      curve,
+      exponent,
+      alwaysOpen,
+      underlying: underlyingOf(row.symbol, curve),
+      launched: launchBySymbol.get(row.symbol.toUpperCase()) ?? ["NVDA", "TSLA", "SPY", "AAPL", "PLTR", "AMD", "QQQ"].includes(row.symbol.toUpperCase()),
       meta: marketMeta(row.symbol),
       token: row.token.toLowerCase(),
       regime,

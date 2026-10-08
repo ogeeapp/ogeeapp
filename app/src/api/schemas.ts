@@ -39,6 +39,8 @@ export const sparklineSchema = z.array(z.object({ t: z.number().int(), p: decima
 
 export const marketSchema = z.object({
   id: z.number().int(), symbol: z.string(), token: z.string(), regime: z.enum(["open", "off_hours", "paused"]),
+  curve: z.enum(["squared", "ratio", "cubed", "root", "downside", "unknown"]), exponent: z.number().nullable(),
+  alwaysOpen: z.boolean(), underlying: z.string(), launched: z.boolean(),
   meta: z.object({ name: z.string(), category: z.string(), color: z.string().regex(/^#[0-9a-fA-F]{6}$/) }).optional(),
   session: z.object({ open: z.boolean(), opensAt: isoDateTime.nullable(), closesAt: isoDateTime.nullable() }),
   buysPaused: z.boolean(), spot: decimal, index: decimal, price: decimal, bid: decimal, ask: decimal,

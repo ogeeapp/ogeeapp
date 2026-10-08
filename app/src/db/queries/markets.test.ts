@@ -60,6 +60,33 @@ test("market list and detail add configured metadata without inventing unknown l
   expect((await getMarketDetail(deps, "AMD", now))?.meta).toEqual(markets[1]?.meta);
 });
 
+test("listMarkets decodes kind and applies launch overrides by symbol", async () => {
+  const sql = async (strings: TemplateStringsArray) => {
+    const query = strings.join("?");
+    if (query.includes("from markets m")) return [
+      { id: 1, symbol: "SPY", token: "0x1", stock: "0x2", config: { kind: 0 }, price: "10", norm_factor: "1", regime: 0 },
+      { id: 2, symbol: "SPYROOT", token: "0x3", stock: "0x2", config: { kind: 0x83 }, price: "10", norm_factor: "1", regime: 0 },
+      { id: 3, symbol: "SPCX", token: "0x4", stock: "0x5", config: { kind: 2 }, price: "10", norm_factor: "1", regime: 0 },
+    ];
+    if (query.includes("from market_launch")) return [
+      { symbol: "SPY", launched: false },
+      { symbol: "SPCX", launched: true },
+    ];
+    return [];
+  };
+  const markets = await listMarkets(
+    { sql, cache: new TtlCache(), config: { NETWORK: "mainnet" } } as unknown as ApiDependencies,
+    new Date("2026-10-08T12:00:00Z"),
+  );
+  expect(markets.map(({ symbol, curve, exponent, alwaysOpen, underlying, launched }) => ({
+    symbol, curve, exponent, alwaysOpen, underlying, launched,
+  }))).toEqual([
+    { symbol: "SPY", curve: "squared", exponent: 2, alwaysOpen: false, underlying: "SPY", launched: false },
+    { symbol: "SPYROOT", curve: "root", exponent: 0.5, alwaysOpen: true, underlying: "SPY", launched: false },
+    { symbol: "SPCX", curve: "cubed", exponent: 3, alwaysOpen: false, underlying: "SPCX", launched: true },
+  ]);
+});
+
 test("mergeVolume attaches bucket volume and zero-fills buckets without trades", () => {
   const candle = (t: number) => ({ t, o: "1", h: "1", l: "1", c: "1" });
   const merged = mergeVolume([candle(0), candle(900), candle(1800)], [
