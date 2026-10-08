@@ -11,8 +11,8 @@ const config = loadConfig();
 const logger = createLogger(config.LOG_LEVEL, "api");
 const deployment = await loadDeployment(config.DEPLOYMENT_FILE);
 assertDeploymentNetwork(deployment, config);
-// The API only reads: its sessions are read-only at the database level.
-const { sql } = createDbClient(config, { readOnly: true });
+// Signed API actions write subscriptions and replay nonces through the shared DB client.
+const { sql } = createDbClient(config);
 const app = createApiApp({ sql, config, deployment, logger, cache: new TtlCache() });
 
 const server = Bun.serve({
