@@ -50,6 +50,13 @@
       "when": 1790780000005,
       "tag": "0006_launch_and_signatures",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790780000006,
+      "tag": "0007_earnings",
+      "breakpoints": true
     }
   ]
 }

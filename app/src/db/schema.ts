@@ -342,6 +342,22 @@ export const apiNonces = pgTable(
   ],
 );
 
+export const earnings = pgTable(
+  "earnings",
+  {
+    symbol: text("symbol").notNull(),
+    reportDate: date("report_date", { mode: "string" }).notNull(),
+    session: text("session").notNull().default("unknown"),
+    fiscalDateEnding: date("fiscal_date_ending", { mode: "string" }),
+    source: text("source").notNull(),
+    fetchedAt: at("fetched_at").notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ name: "earnings_pk", columns: [table.symbol, table.reportDate, table.source] }),
+    index("earnings_date_idx").on(table.reportDate),
+  ],
+);
+
 export const cursors = pgTable("cursors", {
   name: text("name").primaryKey(),
   block: chainBlock().notNull(),
