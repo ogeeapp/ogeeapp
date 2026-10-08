@@ -1,6 +1,7 @@
-const round = (value: number, digits: number): number => {
+const round = (value: number, digits: number): number | null => {
   const factor = 10 ** digits;
-  return Math.round(value * factor) / factor;
+  const scaled = value * factor;
+  return Number.isFinite(scaled) ? Math.round(scaled) / factor : null;
 };
 
 export const CURVE_EXPONENTS = { squared: 2, cubed: 3, root: 0.5, downside: -1 } as const;
@@ -23,13 +24,16 @@ export function curvePayoffPct(exponent: number, movePct: number): number | null
 /** Fair annual carry from the volatility term only. Positive values mean holders pay. */
 export function fairCarryAnnual(exponent: number, sigmaAnnual: number): number | null {
   if (!Number.isFinite(exponent) || !Number.isFinite(sigmaAnnual) || sigmaAnnual < 0) return null;
-  return 0.5 * exponent * (exponent - 1) * sigmaAnnual ** 2;
+  const carry = 0.5 * exponent * (exponent - 1) * sigmaAnnual ** 2;
+  return Number.isFinite(carry) ? carry : null;
 }
 
 /** Fair daily carry, expressed as a percent. */
 export function fairCarryDailyPct(exponent: number, sigmaAnnual: number): number | null {
   const annual = fairCarryAnnual(exponent, sigmaAnnual);
-  return annual === null ? null : round(annual / 365 * 100, 5);
+  if (annual === null) return null;
+  const dailyPct = annual / 365 * 100;
+  return Number.isFinite(dailyPct) ? round(dailyPct, 5) : null;
 }
 
 /** Recover annualized volatility from the volatility-only fair carry term. */
@@ -38,5 +42,7 @@ export function sigmaFromCarry(exponent: number, carryAnnual: number): number | 
   const coefficient = 0.5 * exponent * (exponent - 1);
   if (coefficient === 0) return null;
   const variance = carryAnnual / coefficient;
-  return variance < 0 ? null : Math.sqrt(variance);
+  if (!Number.isFinite(variance) || variance < 0) return null;
+  const sigma = Math.sqrt(variance);
+  return Number.isFinite(sigma) ? sigma : null;
 }

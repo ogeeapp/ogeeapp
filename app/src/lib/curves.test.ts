@@ -16,6 +16,7 @@ test("payoffs reject moves that cross the underlying floor", () => {
   expect(curvePayoffPct(2, -100)).toBeNull();
   expect(curvePayoffPct(0.5, -101)).toBeNull();
   expect(curvePayoffPct(Number.NaN, 10)).toBeNull();
+  expect(curvePayoffPct(1, 1e305)).toBeNull();
 });
 
 test("fair carry uses only the volatility term", () => {
@@ -27,6 +28,8 @@ test("fair carry uses only the volatility term", () => {
   expect(fairCarryDailyPct(0.5, 0.5)).toBeCloseTo(-0.00856, 5);
   expect(fairCarryAnnual(2, -0.1)).toBeNull();
   expect(fairCarryAnnual(2, Number.POSITIVE_INFINITY)).toBeNull();
+  expect(fairCarryAnnual(2, 1e308)).toBeNull();
+  expect(fairCarryDailyPct(2, 1e152)).toBeNull();
 });
 
 test("sigmaFromCarry inverts convex curves and rejects impossible root carry", () => {
@@ -37,4 +40,5 @@ test("sigmaFromCarry inverts convex curves and rejects impossible root carry", (
   }
   expect(sigmaFromCarry(0.5, 0.01)).toBeNull();
   expect(sigmaFromCarry(1, 0)).toBeNull();
+  expect(sigmaFromCarry(1 - 1e-12, Number.MAX_VALUE)).toBeNull();
 });
