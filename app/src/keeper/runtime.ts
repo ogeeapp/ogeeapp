@@ -18,6 +18,7 @@ import { createHedgeJob } from "./jobs/hedge";
 import { updateCarry } from "./jobs/carry";
 import { createRiskJob } from "./jobs/risk";
 import { updateCorporateActions } from "./jobs/corp-actions";
+import { updateReferencePrices } from "./jobs/reference";
 
 const config = loadConfig();
 const logger = createLogger(config.LOG_LEVEL, "keeper");
@@ -36,7 +37,7 @@ const tx = createTransactionQueue(clients, {
 });
 logger.info({ config: safeConfigSummary(config), signer: clients.walletClient?.account?.address, dryRun: config.KEEPER_DRY_RUN }, "Keeper starting");
 const enabled = new Set(config.KEEPER_ENABLED_JOBS.split(",").map((job) => job.trim()).filter(Boolean));
-const validJobs = new Set(["sessions", "accrue", "hedge", "carry", "risk", "corp-actions"]);
+const validJobs = new Set(["sessions", "accrue", "hedge", "carry", "risk", "corp-actions", "reference"]);
 for (const job of enabled) if (!validJobs.has(job)) throw new Error(`Unknown keeper job: ${job}`);
 
 async function startup(): Promise<Deployment> {
@@ -51,7 +52,7 @@ async function startup(): Promise<Deployment> {
     const block = await clients.stateClient.getBlock({ blockNumber: BigInt(deployment.forkProof.blockNumber) });
     if (block.hash?.toLowerCase() !== deployment.forkProof.blockHash.toLowerCase()) throw new Error("Fork proof does not match the node");
   }
-  if ([...enabled].some((job) => job !== "corp-actions")) {
+  if ([...enabled].some((job) => job !== "corp-actions" && job !== "reference")) {
     const account = clients.walletClient?.account;
     if (!account || account.address.toLowerCase() !== deployment.keeper) throw new Error("Signer does not match deployment keeper");
     const abi = parseAbi(["function hasRole(bytes32 role,address account) view returns(bool)"]);
@@ -124,6 +125,7 @@ if (context && lock && !abort.signal.aborted) {
     { name: "carry", everyMs: 60000, run: () => updateCarry(ctx) },
     { name: "risk", everyMs: 60000, run: createRiskJob(ctx) },
     { name: "corp-actions", everyMs: 3600000, run: () => updateCorporateActions(ctx) },
+    { name: "reference", everyMs: 60000, run: () => updateReferencePrices(ctx) },
   ];
   for (const job of definitions) if (enabled.has(job.name)) scheduler.add({ ...job, jitterMs: 2000 });
   const listener = await sql.listen("ogee_events", (payload) => {

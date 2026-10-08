@@ -1,0 +1,45 @@
+interface FetchInit {
+  timeoutMs?: number;
+  headers?: Record<string, string>;
+}
+
+const USER_AGENT = "ogee-keeper/1.0 (+https://ogeeapp.xyz)";
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "external source";
+  }
+}
+
+async function request(url: string, init: FetchInit, accept: string): Promise<Response> {
+  const host = hostOf(url);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { "User-Agent": USER_AGENT, Accept: accept, ...init.headers },
+      signal: AbortSignal.timeout(init.timeoutMs ?? 10_000),
+    });
+  } catch {
+    throw new Error(`${host} request failed`);
+  }
+  if (!response.ok) throw new Error(`${host} returned HTTP ${response.status}`);
+  return response;
+}
+
+export async function fetchJsonWithTimeout(
+  url: string,
+  init: FetchInit = {},
+): Promise<unknown> {
+  const response = await request(url, init, "application/json");
+  return response.json();
+}
+
+export async function fetchTextWithTimeout(
+  url: string,
+  init: FetchInit = {},
+): Promise<string> {
+  const response = await request(url, init, "text/csv, text/plain, */*");
+  return response.text();
+}

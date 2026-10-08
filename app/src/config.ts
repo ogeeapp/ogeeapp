@@ -29,7 +29,7 @@ const envSchema = z.object({
   INDEXER_POLL_BASE_MS: z.coerce.number().int().positive().default(15000),
   INDEXER_POLL_IDLE_MS: z.coerce.number().int().positive().default(60000),
   DEPLOYMENT_FILE: z.string().min(1).default("/app/deployments/fork.json"),
-  KEEPER_ENABLED_JOBS: z.string().default("sessions,accrue,hedge,carry,risk,corp-actions"),
+  KEEPER_ENABLED_JOBS: z.string().default("sessions,accrue,hedge,carry,risk,corp-actions,reference"),
   KEEPER_DRY_RUN: z.enum(["0", "1"]).default("0").transform((value) => value === "1"),
   // Accrue every market once any market's last accrual is this old while positions are open. Paused marks fall
   // back to the last accrued price, so a short interval keeps that price close to the feed.
