@@ -1,7 +1,7 @@
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import type { ApiDependencies } from "../types";
 import {
-  historyRangeQuery, hottestTokensQuery, hottestTokensSchema,
+  correlationQuery, correlationResponseSchema, historyRangeQuery, hottestTokensQuery, hottestTokensSchema,
   statsHistoryResponseSchema, statsResponseSchema, volBoardResponseSchema,
 } from "../schemas";
 import { aggregateStats } from "../../db/queries/stats";
@@ -10,6 +10,7 @@ import { apiNow } from "../clock";
 import { allMarketVols, sortVolBoard } from "../../db/queries/vol";
 import { hottestTokens } from "../../db/queries/token-flow";
 import { listMarkets } from "../../db/queries/markets";
+import { marketCorrelation, type CorrelationDays } from "../../db/queries/correlation";
 
 const route = createRoute({
   method: "get", path: "/v1/stats", tags: ["markets"],
@@ -19,6 +20,11 @@ const route = createRoute({
 const historyRoute = createRoute({
   method: "get", path: "/v1/stats/history", tags: ["markets"], request: { query: historyRangeQuery },
   responses: { 200: { description: "Daily protocol history", content: { "application/json": { schema: statsHistoryResponseSchema } } } },
+});
+
+const correlationRoute = createRoute({
+  method: "get", path: "/v1/stats/correlation", tags: ["markets"], request: { query: correlationQuery },
+  responses: { 200: { description: "Hourly correlation matrix for launched market underlyings", content: { "application/json": { schema: correlationResponseSchema } } } },
 });
 
 const volRoute = createRoute({
@@ -32,6 +38,13 @@ const hottestTokensRoute = createRoute({
 });
 
 export function registerStatsRoutes(app: OpenAPIHono, deps: ApiDependencies): void {
+  app.openapi(correlationRoute, async (context) => {
+    context.header("Cache-Control", "public, max-age=300, stale-while-revalidate=900");
+    const days = Number(context.req.valid("query").days) as CorrelationDays;
+    const result = await marketCorrelation(deps, days);
+    return context.json(result, 200);
+  });
+
   app.openapi(hottestTokensRoute, async (context) => {
     context.header("Cache-Control", "public, max-age=5, stale-while-revalidate=30");
     const { limit } = context.req.valid("query");

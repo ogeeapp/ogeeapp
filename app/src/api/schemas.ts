@@ -134,6 +134,16 @@ export const statsHistoryResponseSchema = z.object({
   markets: z.array(z.object({ symbol: z.string(), volumeUsd: decimal, trades: count, sharePct: percent })),
 });
 
+export const correlationQuery = z.object({ days: z.enum(["7", "30"]).default("30") });
+export const correlationResponseSchema = z.object({
+  days: z.union([z.literal(7), z.literal(30)]),
+  asOf: isoDateTime,
+  minOverlap: z.number().int().positive(),
+  symbols: z.array(z.string()),
+  values: z.array(z.array(z.number().min(-1).max(1).nullable())),
+  overlap: z.array(z.array(z.number().int().nonnegative())),
+});
+
 const boardRange = z.enum(["7D", "30D", "ALL"]);
 const boardSort = z.enum(["volume", "trades"]);
 export const leaderboardQuery = z.object({

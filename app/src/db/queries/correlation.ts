@@ -1,3 +1,8 @@
+import type { ApiDependencies, DbRow } from "../../api/types";
+import { asRows, numberValue, textValue } from "../../api/types";
+import { apiNow } from "../../api/clock";
+import { listMarkets, type MarketView } from "./markets";
+
 export const CORRELATION_MIN_OVERLAP = 20;
 
 export type CorrelationDays = 7 | 30;
@@ -16,6 +21,24 @@ export interface PearsonResult {
 export interface CorrelationMatrix {
   values: (number | null)[][];
   overlap: number[][];
+}
+
+export interface MarketCorrelationResponse extends CorrelationMatrix {
+  days: CorrelationDays;
+  asOf: string;
+  minOverlap: number;
+  symbols: string[];
+}
+
+interface CorrelationDbRow extends DbRow {
+  market_id: unknown;
+  t: unknown;
+  spot: unknown;
+}
+
+interface CachedCorrelationReturns {
+  asOf: string;
+  returnsById: Map<number, Map<number, number>>;
 }
 
 /** Build hourly log returns only across adjacent buckets for the same market. */
@@ -60,6 +83,12 @@ export function pearson(a: Map<number, number>, b: Map<number, number>): Pearson
 
   const overlap = pairs.length;
   if (overlap < CORRELATION_MIN_OVERLAP) return { value: null, overlap };
+
+  const firstA = pairs[0]![0];
+  const firstB = pairs[0]![1];
+  if (pairs.every(([left]) => left === firstA) || pairs.every(([, right]) => right === firstB)) {
+    return { value: null, overlap };
+  }
 
   const meanA = pairs.reduce((sum, [left]) => sum + left, 0) / overlap;
   const meanB = pairs.reduce((sum, [, right]) => sum + right, 0) / overlap;
@@ -110,4 +139,54 @@ export function correlationMatrix(
   }
 
   return { values, overlap };
+}
+
+/**
+ * Serve a matrix projected onto the current launched markets. The hour-long
+ * cache stores all-market returns so a launch-state change cannot leave stale
+ * symbols or dimensions in a warm cached response.
+ */
+export async function marketCorrelation(
+  deps: ApiDependencies,
+  days: CorrelationDays,
+  requestedNow?: Date,
+): Promise<MarketCorrelationResponse> {
+  const now = requestedNow ?? await apiNow(deps);
+  const nowIso = now.toISOString();
+  const registered = await deps.cache.getOrLoad("markets:list", 3_000, () => listMarkets(deps, now));
+  const markets = registered.filter((market: MarketView) => market.launched);
+
+  const cached = await deps.cache.getOrLoad<CachedCorrelationReturns>(
+    `stats:correlation:${days}`,
+    3_600_000,
+    async () => {
+      const result = await deps.sql`
+        select market_id, floor(extract(epoch from time_bucket(interval '1 hour', ts)))::bigint as t,
+          last(spot, ts)::text as spot
+        from ticks
+        where regime = 0 and spot > 0
+          and ts >= ${nowIso}::timestamptz - (${days}::int * interval '1 day')
+          and ts <= ${nowIso}::timestamptz
+        group by market_id, 2
+        order by market_id, 2
+      `;
+      const rows = asRows<CorrelationDbRow>(result).map((row) => ({
+        market_id: numberValue(row.market_id, Number.NaN),
+        t: numberValue(row.t, Number.NaN),
+        spot: textValue(row.spot),
+      }));
+      return { asOf: nowIso, returnsById: hourlyReturns(rows) };
+    },
+  );
+
+  const symbols = markets.map((market) => market.symbol);
+  const ids = markets.map((market) => market.id);
+  const matrix = correlationMatrix(symbols, cached.returnsById, ids);
+  return {
+    days,
+    asOf: cached.asOf,
+    minOverlap: CORRELATION_MIN_OVERLAP,
+    symbols,
+    ...matrix,
+  };
 }
