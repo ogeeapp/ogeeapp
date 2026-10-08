@@ -4,6 +4,7 @@ import { isAddress } from "viem";
 const decimal = z.string().regex(/^-?\d+(?:\.\d+)?$/);
 export const isoDateTime = z.string().datetime({ offset: true });
 const percent = z.number().finite();
+const earningsSession = z.enum(["pre", "post", "unknown"]);
 
 export const errorResponseSchema = z.object({ error: z.string(), message: z.string() });
 
@@ -41,6 +42,9 @@ export const marketSchema = z.object({
   id: z.number().int(), symbol: z.string(), token: z.string(), regime: z.enum(["open", "off_hours", "paused"]),
   curve: z.enum(["squared", "ratio", "cubed", "root", "downside", "unknown"]), exponent: z.number().nullable(),
   alwaysOpen: z.boolean(), underlying: z.string(), launched: z.boolean(),
+  nextEarnings: z.object({
+    date: z.string(), session: earningsSession, confirmed: z.boolean(), daysUntil: z.number().int(),
+  }).nullable(),
   meta: z.object({ name: z.string(), category: z.string(), color: z.string().regex(/^#[0-9a-fA-F]{6}$/) }).optional(),
   session: z.object({ open: z.boolean(), opensAt: isoDateTime.nullable(), closesAt: isoDateTime.nullable() }),
   buysPaused: z.boolean(), spot: decimal, index: decimal, price: decimal, bid: decimal, ask: decimal,
@@ -186,6 +190,25 @@ export const exportQuery = z.object({
   to: isoDate.optional(),
 }).refine((q) => !q.from || !q.to || q.from <= q.to, "from must not be after to");
 export const corpActionsQuery = z.object({ symbol: z.string().min(1).max(16).transform((value) => value.toUpperCase()).optional() });
+export const earningsQuery = z.object({ days: z.coerce.number().int().min(1).max(90).default(30) });
+export const earningsResponseSchema = z.object({
+  asOf: isoDateTime,
+  todayEt: z.string(),
+  days: z.number().int(),
+  items: z.array(z.object({
+    symbol: z.string(),
+    date: z.string(),
+    session: earningsSession,
+    confirmed: z.boolean(),
+    source: z.enum(["override", "alphavantage"]),
+    sourceUrl: z.string().nullable(),
+    daysUntil: z.number().int(),
+    upcoming: z.boolean(),
+    markets: z.array(z.object({
+      symbol: z.string(), curve: z.string(), price: decimal, change24hPct: percent, dailyCarryPct: percent,
+    })),
+  })),
+});
 
 const nullablePct = percent.nullable();
 export const marketVolSchema = z.object({

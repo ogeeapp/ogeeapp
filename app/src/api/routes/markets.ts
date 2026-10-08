@@ -13,6 +13,7 @@ import { dateValue, textValue } from "../types";
 
 import { apiNow } from "../clock";
 import { allMarketVols } from "../../db/queries/vol";
+import { nextEarningsBySymbol } from "../../db/queries/earnings";
 
 const cacheHeader = "public, max-age=5, stale-while-revalidate=30";
 const marketListQuery = z.object({ include: z.enum(["upcoming"]).optional() });
@@ -118,7 +119,11 @@ export function registerMarketRoutes(app: OpenAPIHono, deps: ApiDependencies): v
     const { include } = context.req.valid("query");
     const markets = await deps.cache.getOrLoad("markets:list", 3_000, () => listMarkets(deps));
     const visible = include === "upcoming" ? markets : markets.filter((market) => market.launched);
-    return context.json(visible.map(({ config: _config, stats: _stats, ...market }) => market), 200);
+    const next = await deps.cache.getOrLoad("earnings:next", 60_000, () => nextEarningsBySymbol(deps));
+    return context.json(visible.map(({ config: _config, stats: _stats, ...market }) => ({
+      ...market,
+      nextEarnings: next.get((market.underlying ?? market.symbol).toUpperCase()) ?? null,
+    })), 200);
   });
 
   app.openapi(detailRoute, async (context) => {
@@ -129,7 +134,11 @@ export function registerMarketRoutes(app: OpenAPIHono, deps: ApiDependencies): v
     if (!market || (!market.launched && include !== "upcoming")) {
       return context.json({ error: "NOT_FOUND", message: `Unknown market symbol: ${symbol}` }, 404);
     }
-    return context.json(market, 200);
+    const next = await deps.cache.getOrLoad("earnings:next", 60_000, () => nextEarningsBySymbol(deps));
+    return context.json({
+      ...market,
+      nextEarnings: next.get((market.underlying ?? market.symbol).toUpperCase()) ?? null,
+    }, 200);
   });
 
   app.openapi(candlesRoute, async (context) => {

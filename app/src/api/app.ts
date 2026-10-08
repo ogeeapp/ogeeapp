@@ -6,6 +6,7 @@ import { openApiDocument } from "./openapi";
 import { registerAccountRoutes } from "./routes/accounts";
 import { registerConfigRoutes } from "./routes/config";
 import { registerCorporateActionRoutes } from "./routes/corp-actions";
+import { registerEarningsRoutes } from "./routes/earnings";
 import { registerHealthRoutes } from "./routes/health";
 import { registerLeaderboardRoutes } from "./routes/leaderboard";
 import { registerMarketRoutes } from "./routes/markets";
@@ -66,6 +67,7 @@ export function createApiApp(deps: ApiDependencies) {
   registerAccountRoutes(app, deps);
   registerVaultRoutes(app, deps);
   registerCorporateActionRoutes(app, deps);
+  registerEarningsRoutes(app, deps);
   registerUpcomingRoutes(app, deps);
   registerStatsRoutes(app, deps);
   registerLeaderboardRoutes(app, deps);
