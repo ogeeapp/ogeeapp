@@ -272,6 +272,26 @@ export const corpActions = pgTable(
   (table) => [index("corp_actions_symbol_effective_idx").on(table.symbol, table.effectiveAt)],
 );
 
+export const refPrices = pgTable(
+  "ref_prices",
+  {
+    stock: text("stock").primaryKey(),
+    symbol: text("symbol").notNull(),
+    bid: amount("bid"),
+    ask: amount("ask"),
+    tokenBid: amount("token_bid"),
+    tokenAsk: amount("token_ask"),
+    dailyHigh: amount("daily_high"),
+    dailyLow: amount("daily_low"),
+    dailyVolume: amount("daily_volume"),
+    mintBurnUsd: amount("mint_burn_usd"),
+    halt: boolean("halt").notNull().default(false),
+    generatedAt: at("generated_at").notNull(),
+    fetchedAt: at("fetched_at").notNull().defaultNow(),
+  },
+  (table) => [index("ref_prices_symbol_idx").on(table.symbol)],
+);
+
 export const cursors = pgTable("cursors", {
   name: text("name").primaryKey(),
   block: chainBlock().notNull(),

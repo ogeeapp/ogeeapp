@@ -29,6 +29,13 @@
       "when": 1790780000002,
       "tag": "0003_market_carry_history",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790780000003,
+      "tag": "0004_ref_prices",
+      "breakpoints": true
     }
   ]
 }
